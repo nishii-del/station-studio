@@ -847,8 +847,35 @@ if page == "検索":
             with c4:
                 st.markdown(f'<div class="num-card"><div class="num">{total_images}</div><div class="num-label">画像総数</div></div>', unsafe_allow_html=True)
 
-        # pydeckマップ（駅別モードで座標データがある場合）
-        if mode_key == "station":
+        # pydeckマップ
+        if mode_key == "city":
+            city_stations = result.get("stations", [])
+            map_points = []
+            for s in city_stations:
+                if s.get("lat") and s.get("lon"):
+                    map_points.append({
+                        "name": s["name"],
+                        "lat": s["lat"],
+                        "lon": s["lon"],
+                        "color": [45, 138, 78, 200],
+                        "radius": 400,
+                    })
+            if map_points:
+                lats = [p["lat"] for p in map_points]
+                lons = [p["lon"] for p in map_points]
+                center_lat = sum(lats) / len(lats)
+                center_lon = sum(lons) / len(lons)
+                lat_range = (max(lats) - min(lats)) * 1.2 or 0.01
+                lon_range = (max(lons) - min(lons)) * 1.2 or 0.01
+                zoom_lat = math.log2(180 / lat_range)
+                zoom_lon = math.log2(360 / lon_range)
+                zoom = max(5, min(15, min(zoom_lat, zoom_lon)))
+                layer = pdk.Layer("ScatterplotLayer", data=map_points, get_position=["lon", "lat"], get_fill_color="color", get_radius="radius", pickable=True)
+                view = pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=0)
+                deck = pdk.Deck(layers=[layer], initial_view_state=view, tooltip={"text": "{name}"}, map_style="light")
+                st.pydeck_chart(deck, key=f"pydeck_city_{len(map_points)}")
+
+        elif mode_key == "station":
             base_coords = result.get("base_coords")
             all_stations_flat = [s for rw in filtered_railways for s in rw.get("_filtered_stations", [])]
             map_points = []
