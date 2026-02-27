@@ -81,6 +81,7 @@ APP_USERS = {
     "morimoto":   "St@morimoto2024",
     "fujita":     "St@fujita2024",
     "kanbu":      "St@kanbu2024",
+    "miki":       "St@miki2024",
 }
 
 

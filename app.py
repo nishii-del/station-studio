@@ -188,7 +188,7 @@ _USER_NAMES = {
     "hirayama": "平山", "horii": "堀井", "izumi": "泉",
     "wada": "和田", "hashimoto": "橋本", "takahashi": "高橋",
     "hamada": "濱田", "morimoto": "森本", "fujita": "藤田",
-    "kanbu": "幹部共通",
+    "kanbu": "幹部共通", "miki": "三木",
 }
 
 def _heartbeat():
