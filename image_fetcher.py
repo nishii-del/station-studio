@@ -18,7 +18,9 @@ from config import (
     WIKIMEDIA_API_URL,
     MIN_IMAGE_WIDTH,
     IMAGES_PER_STATION,
-    IMAGE_SEARCH_QUERIES,
+    IMAGE_QUERIES_BUILDING,
+    IMAGE_QUERIES_SIGN,
+    IMAGE_QUERIES_SCENERY,
     IMAGE_CACHE_DIR,
 )
 
@@ -54,7 +56,7 @@ def _get_cached_images(station_name):
 
 
 def _save_to_cache(station_name, image_paths):
-    """保管庫に最新の1枚だけ上書き保存する。"""
+    """保管庫に全画像を上書き保存する。"""
     cache_dir = os.path.join(IMAGE_CACHE_DIR, _sanitize_filename(station_name))
     os.makedirs(cache_dir, exist_ok=True)
     # 古い画像を全削除（meta.jsonは保持）
@@ -64,12 +66,11 @@ def _save_to_cache(station_name, image_paths):
         old_path = os.path.join(cache_dir, old)
         if os.path.isfile(old_path):
             os.remove(old_path)
-    # 1枚だけ保存
-    if image_paths:
-        safe_name = _sanitize_filename(station_name)
-        src = image_paths[0]
+    # 全枚保存
+    safe_name = _sanitize_filename(station_name)
+    for i, src in enumerate(image_paths):
         ext = os.path.splitext(src)[1] or ".jpg"
-        dst = os.path.join(cache_dir, f"{safe_name}_1{ext}")
+        dst = os.path.join(cache_dir, f"{safe_name}_{i+1}{ext}")
         if os.path.abspath(src) != os.path.abspath(dst):
             shutil.copy2(src, dst)
 
@@ -330,10 +331,21 @@ def _google_search_once(query, station_name, output_dir, max_images):
     return saved_paths
 
 
+def _search_category(queries, search_name, output_dir, category_label):
+    """1カテゴリ分のクエリリストを順に試行して1枚取得"""
+    for query_tmpl in queries:
+        query = query_tmpl.format(station_name=search_name)
+        logger.info(f"Google画像検索（{category_label}）: {query}")
+        paths = _google_search_once(query, search_name, output_dir, 1)
+        if paths:
+            return paths
+    return []
+
+
 def search_google_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
     """
-    Google Custom Search APIで駅画像を検索・保存
-    複数クエリを順に試行 → Wikimedia フォールバック
+    Google Custom Search APIで駅画像を3カテゴリ取得
+    1. 駅建物/入口  2. 駅名標  3. 駅周辺風景
 
     Args:
         station_name: 駅名
@@ -352,13 +364,22 @@ def search_google_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     clean_name = re.sub(r'[\(（〈\[【].+?[\)）〉\]】]', '', station_name).strip()
     search_name = clean_name if clean_name else station_name
 
-    # 設定のクエリリストを順番に試行
-    for i, query_tmpl in enumerate(IMAGE_SEARCH_QUERIES):
-        query = query_tmpl.format(station_name=search_name)
-        logger.info(f"Google画像検索（{i+1}/{len(IMAGE_SEARCH_QUERIES)}）: {query}")
-        paths = _google_search_once(query, search_name, output_dir, max_images)
-        if paths:
-            return paths
+    all_paths = []
+
+    # カテゴリ別に1枚ずつ取得
+    categories = [
+        (IMAGE_QUERIES_BUILDING, "駅建物"),
+        (IMAGE_QUERIES_SIGN, "駅名標"),
+        (IMAGE_QUERIES_SCENERY, "風景"),
+    ]
+    for queries, label in categories:
+        if len(all_paths) >= max_images:
+            break
+        paths = _search_category(queries, search_name, output_dir, label)
+        all_paths.extend(paths)
+
+    if all_paths:
+        return all_paths
 
     # Wikimedia フォールバック
     logger.info(f"Google検索結果なし。Wikimediaにフォールバック: {search_name}")

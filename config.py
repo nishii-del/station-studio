@@ -28,14 +28,27 @@ GOOGLE_CSE_ID = os.environ.get("GOOGLE_CSE_ID", "YOUR_CSE_ID_HERE")
 MIN_IMAGE_WIDTH = 400
 
 # 1駅あたりの取得画像数
-IMAGES_PER_STATION = 1
+IMAGES_PER_STATION = 3
 
-# 画像検索クエリテンプレート（上から順に試行）
-IMAGE_SEARCH_QUERIES = [
+# 1回の一括取得の上限駅数
+MAX_BULK_STATIONS = 30
+
+# 画像検索クエリテンプレート（カテゴリ別）
+# 駅建物・駅舎
+IMAGE_QUERIES_BUILDING = [
     '"{station_name}駅" 駅舎 外観 -ナンバリング -路線図 -アイコン -工事',
     '"{station_name}駅" 外観 全景 -路線図 -アイコン -工事',
     '"{station_name}駅" 入口 外観 -ナンバリング -路線図',
-    '"{station_name}駅" -路線図 -アイコン -地図 -構内図',
+]
+# 駅名標
+IMAGE_QUERIES_SIGN = [
+    '"{station_name}駅" 駅名標 -路線図 -アイコン',
+    '"{station_name}駅" 駅標 ホーム -路線図',
+]
+# 駅周辺の風景
+IMAGE_QUERIES_SCENERY = [
+    '"{station_name}駅" 駅前 風景 -路線図 -アイコン -地図',
+    '"{station_name}駅" 周辺 街並み -路線図 -地図',
 ]
 
 # =============================================

@@ -23,6 +23,7 @@ from config import (
     CITY_OUTPUT_DIR,
     OUTPUT_DIR,
     IMAGE_CACHE_DIR,
+    MAX_BULK_STATIONS,
     APP_USERS,
     APP_DELETE_PASSWORD,
 )
@@ -986,6 +987,8 @@ if page == "検索":
 
                 if not checked_stations:
                     st.warning("駅が選択されていません")
+                elif len(checked_stations) > MAX_BULK_STATIONS:
+                    st.warning(f"一度にダウンロードできるのは{MAX_BULK_STATIONS}駅までです（選択: {len(checked_stations)}駅）。チェックを減らしてください。")
                 else:
                     now = datetime.now()
                     ts = now.strftime("%Y%m%d_%H%M%S")
@@ -1074,6 +1077,8 @@ if page == "検索":
 
                 if not checked_stations:
                     st.warning("駅が選択されていません")
+                elif len(checked_stations) > MAX_BULK_STATIONS:
+                    st.warning(f"一度にダウンロードできるのは{MAX_BULK_STATIONS}駅までです（選択: {len(checked_stations)}駅）")
                 else:
                     now = datetime.now()
                     ts = now.strftime("%Y%m%d_%H%M%S")
