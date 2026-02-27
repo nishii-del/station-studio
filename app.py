@@ -163,6 +163,7 @@ def _render_login_page():
     if login_btn:
         if APP_USERS.get(login_id) == pw:
             st.session_state["authenticated"] = True
+            st.session_state["login_user_id"] = login_id
             st.rerun()
         else:
             st.error("IDまたはパスワードが正しくありません")
@@ -181,6 +182,29 @@ if not st.session_state.get("authenticated", False):
     _render_login_page()
     st.stop()
 
+# --- オンラインユーザー ハートビート ---
+_USER_NAMES = {
+    "ishii": "石井", "obuchi": "大渕", "takeuchi": "竹内",
+    "hirayama": "平山", "horii": "堀井", "izumi": "泉",
+    "wada": "和田", "hashimoto": "橋本", "takahashi": "高橋",
+    "hamada": "濱田", "morimoto": "森本", "fujita": "藤田",
+    "kanbu": "幹部共通",
+}
+
+def _heartbeat():
+    """オンラインユーザーを更新（30秒でタイムアウト）"""
+    uid = st.session_state.get("login_user_id", "")
+    if not uid:
+        return
+    sid = id(st.session_state)
+    dl_state.online_users[sid] = {"user_id": uid, "last_seen": time.time()}
+    # 古いセッションを削除
+    now = time.time()
+    stale = [k for k, v in dl_state.online_users.items() if now - v["last_seen"] > 30]
+    for k in stale:
+        dl_state.online_users.pop(k, None)
+
+_heartbeat()
 
 st.markdown("""
 <meta name="google" content="notranslate">
@@ -538,8 +562,23 @@ with st.sidebar:
     st.caption(f"ライブラリ: {lib_count}件")
 
     st.markdown("---")
+    # オンラインユーザー表示
+    _now = time.time()
+    _active = {v["user_id"] for v in dl_state.online_users.values() if _now - v["last_seen"] <= 30}
+    _online_names = [_USER_NAMES.get(u, u) for u in sorted(_active)]
+    st.caption(f"オンライン: {len(_online_names)}人")
+    if _online_names:
+        st.markdown(
+            " ".join(f'<span style="display:inline-block;background:#e8f5e9;color:#2d8a4e;padding:0.15rem 0.5rem;border-radius:12px;font-size:0.72rem;font-weight:600;margin:0.1rem;">{n}</span>' for n in _online_names),
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
     if st.button("ログアウト", use_container_width=True, key="_logout_btn"):
+        sid = id(st.session_state)
+        dl_state.online_users.pop(sid, None)
         st.session_state["authenticated"] = False
+        st.session_state.pop("login_user_id", None)
         st.rerun()
 
 
