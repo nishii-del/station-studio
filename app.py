@@ -1428,29 +1428,29 @@ elif page == "保管庫":
 
         else:
             # ========== カードビュー（フィルタ適用時: 既存の詳細表示） ==========
-            # チェック数の集計
-            _total_checked = sum(
-                1 for m in all_cache
-                if st.session_state.get(f"cache_cb_{m.get('name','')}", False)
-            )
+            # チェック状態を永続セットで管理（ウィジェットが消えても保持）
+            if "_cache_checked_set" not in st.session_state:
+                st.session_state["_cache_checked_set"] = set()
+            _checked_set = st.session_state["_cache_checked_set"]
+
+            _total_checked = len(_checked_set)
 
             # 操作ボタン
             _bulk_col1, _bulk_col2, _bulk_col3 = st.columns([1, 1, 2])
             with _bulk_col1:
                 if st.button("表示を全選択", use_container_width=True, key="cache_sel_all"):
                     for m in filtered:
-                        st.session_state[f"cache_cb_{m.get('name','')}"] = True
+                        _checked_set.add(m.get("name", ""))
                     st.rerun()
             with _bulk_col2:
                 if st.button("表示を全解除", use_container_width=True, key="cache_desel_all"):
                     for m in filtered:
-                        st.session_state[f"cache_cb_{m.get('name','')}"] = False
+                        _checked_set.discard(m.get("name", ""))
                     st.rerun()
             with _bulk_col3:
                 _sel_files = []
                 for m in all_cache:
-                    cb_key = f"cache_cb_{m.get('name','')}"
-                    if st.session_state.get(cb_key, False):
+                    if m.get("name", "") in _checked_set:
                         d = m.get("_dir", "")
                         if d and os.path.isdir(d):
                             for f in os.listdir(d):
@@ -1504,9 +1504,15 @@ elif page == "保管庫":
 
                 with cache_cols[ci % 3]:
                     cb_key = f"cache_cb_{name}"
-                    st.checkbox(name, value=st.session_state.get(cb_key, False), key=cb_key, label_visibility="collapsed")
+                    is_checked = name in _checked_set
+                    new_val = st.checkbox(name, value=is_checked, key=cb_key, label_visibility="collapsed")
+                    # チェック変更を永続セットに反映
+                    if new_val and name not in _checked_set:
+                        _checked_set.add(name)
+                    elif not new_val and name in _checked_set:
+                        _checked_set.discard(name)
 
-                    checked_style = "" if st.session_state.get(cb_key, False) else "opacity:0.4;"
+                    checked_style = "" if new_val else "opacity:0.4;"
                     st.markdown(f'''<div class="st-card" style="{checked_style}">
                         <div class="st-name">{name}</div>
                         <span class="st-badge cached">{badge_text}</span>
