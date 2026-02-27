@@ -64,9 +64,24 @@ LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 # パスワード設定
 # =============================================
 
-APP_LOGIN_ID = os.environ.get("STATION_STUDIO_LOGIN_ID", "admin")
-APP_LOGIN_PASSWORD = os.environ.get("STATION_STUDIO_LOGIN_PW", "station2024")
 APP_DELETE_PASSWORD = os.environ.get("STATION_STUDIO_DELETE_PW", "delete2024")
+
+# ユーザーアカウント {ID: パスワード}
+APP_USERS = {
+    "ishii":      "St@ishii2024",
+    "obuchi":     "St@obuchi2024",
+    "takeuchi":   "St@takeuchi2024",
+    "hirayama":   "St@hirayama2024",
+    "horii":      "St@horii2024",
+    "izumi":      "St@izumi2024",
+    "wada":       "St@wada2024",
+    "hashimoto":  "St@hashimoto2024",
+    "takahashi":  "St@takahashi2024",
+    "hamada":     "St@hamada2024",
+    "morimoto":   "St@morimoto2024",
+    "fujita":     "St@fujita2024",
+    "kanbu":      "St@kanbu2024",
+}
 
 
 def setup_logging():

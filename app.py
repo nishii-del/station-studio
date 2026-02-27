@@ -23,8 +23,7 @@ from config import (
     CITY_OUTPUT_DIR,
     OUTPUT_DIR,
     IMAGE_CACHE_DIR,
-    APP_LOGIN_ID,
-    APP_LOGIN_PASSWORD,
+    APP_USERS,
     APP_DELETE_PASSWORD,
 )
 
@@ -162,7 +161,7 @@ def _render_login_page():
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
     login_btn = st.button("ログイン", type="primary", use_container_width=True, key="_login_btn")
     if login_btn:
-        if login_id == APP_LOGIN_ID and pw == APP_LOGIN_PASSWORD:
+        if APP_USERS.get(login_id) == pw:
             st.session_state["authenticated"] = True
             st.rerun()
         else:
