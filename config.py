@@ -30,11 +30,13 @@ MIN_IMAGE_WIDTH = 400
 # 1駅あたりの取得画像数
 IMAGES_PER_STATION = 1
 
-# 画像検索クエリテンプレート
-# メインクエリ（駅舎外観 — 建物+駅名が写る）
-IMAGE_SEARCH_QUERY = '"{station_name}駅" 駅舎 外観 -ナンバリング -路線図 -アイコン'
-# フォールバッククエリ（入口 — 地下鉄向け）
-IMAGE_SEARCH_QUERY_FALLBACK = '"{station_name}駅" 入口 外観 -ナンバリング -路線図'
+# 画像検索クエリテンプレート（上から順に試行）
+IMAGE_SEARCH_QUERIES = [
+    '"{station_name}駅" 駅舎 外観 -ナンバリング -路線図 -アイコン -工事',
+    '"{station_name}駅" 外観 全景 -路線図 -アイコン -工事',
+    '"{station_name}駅" 入口 外観 -ナンバリング -路線図',
+    '"{station_name}駅" -路線図 -アイコン -地図 -構内図',
+]
 
 # =============================================
 # API エンドポイント

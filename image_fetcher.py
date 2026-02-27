@@ -18,8 +18,7 @@ from config import (
     WIKIMEDIA_API_URL,
     MIN_IMAGE_WIDTH,
     IMAGES_PER_STATION,
-    IMAGE_SEARCH_QUERY,
-    IMAGE_SEARCH_QUERY_FALLBACK,
+    IMAGE_SEARCH_QUERIES,
     IMAGE_CACHE_DIR,
 )
 
@@ -334,7 +333,7 @@ def _google_search_once(query, station_name, output_dir, max_images):
 def search_google_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
     """
     Google Custom Search APIで駅画像を検索・保存
-    メインクエリ → フォールバッククエリ → Wikimedia の順で試行
+    複数クエリを順に試行 → Wikimedia フォールバック
 
     Args:
         station_name: 駅名
@@ -349,33 +348,19 @@ def search_google_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         return search_wikimedia_images(station_name, output_dir, max_images)
 
     # 駅名からカッコ付きサフィックスを除去（検索精度向上）
-    # 例: "二重橋前〈丸の内〉" → "二重橋前", "赤坂(東京)" → "赤坂"
     import re
     clean_name = re.sub(r'[\(（〈\[【].+?[\)）〉\]】]', '', station_name).strip()
     search_name = clean_name if clean_name else station_name
 
-    # 1. メインクエリ: 駅舎外観
-    query1 = IMAGE_SEARCH_QUERY.format(station_name=search_name)
-    logger.info(f"Google画像検索（メイン）: {query1}")
-    paths = _google_search_once(query1, search_name, output_dir, max_images)
-    if paths:
-        return paths
+    # 設定のクエリリストを順番に試行
+    for i, query_tmpl in enumerate(IMAGE_SEARCH_QUERIES):
+        query = query_tmpl.format(station_name=search_name)
+        logger.info(f"Google画像検索（{i+1}/{len(IMAGE_SEARCH_QUERIES)}）: {query}")
+        paths = _google_search_once(query, search_name, output_dir, max_images)
+        if paths:
+            return paths
 
-    # 2. フォールバッククエリ: 入口
-    query2 = IMAGE_SEARCH_QUERY_FALLBACK.format(station_name=search_name)
-    logger.info(f"Google画像検索（フォールバック）: {query2}")
-    paths = _google_search_once(query2, search_name, output_dir, max_images)
-    if paths:
-        return paths
-
-    # 3. 駅名のみのシンプルクエリ
-    query3 = f'"{search_name}駅"'
-    logger.info(f"Google画像検索（シンプル）: {query3}")
-    paths = _google_search_once(query3, search_name, output_dir, max_images)
-    if paths:
-        return paths
-
-    # 4. Wikimedia
+    # Wikimedia フォールバック
     logger.info(f"Google検索結果なし。Wikimediaにフォールバック: {search_name}")
     return search_wikimedia_images(search_name, output_dir, max_images)
 
