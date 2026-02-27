@@ -22,10 +22,15 @@ from config import (
     STATION_OUTPUT_DIR,
     CITY_OUTPUT_DIR,
     OUTPUT_DIR,
+    IMAGE_CACHE_DIR,
     APP_LOGIN_ID,
     APP_LOGIN_PASSWORD,
     APP_DELETE_PASSWORD,
 )
+
+# Cloud環境用: 必要なディレクトリを自動作成
+for _d in [OUTPUT_DIR, STATION_OUTPUT_DIR, CITY_OUTPUT_DIR, IMAGE_CACHE_DIR]:
+    os.makedirs(_d, exist_ok=True)
 
 st.set_page_config(
     page_title="STATION STUDIO",
