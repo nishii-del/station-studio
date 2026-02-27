@@ -348,23 +348,31 @@ def search_google_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         logger.warning("Google API キーが未設定です。Wikimediaにフォールバックします。")
         return search_wikimedia_images(station_name, output_dir, max_images)
 
-    # 駅名からカッコ付きサフィックスを除去（検索精度向上）
     import re
     clean_name = re.sub(r'[\(（〈\[【].+?[\)）〉\]】]', '', station_name).strip()
-    search_name = clean_name if clean_name else station_name
+    has_bracket = clean_name != station_name and clean_name
 
-    # 全クエリを優先順に統合して試行（1枚取れたら終了）
+    # 検索名リスト: カッコ付き駅はフルネームを先に試す
+    # 例: "明治神宮前〈原宿〉" → ["明治神宮前〈原宿〉", "明治神宮前"]
+    search_names = [station_name]
+    if has_bracket:
+        search_names = [station_name, clean_name]
+
     all_queries = IMAGE_QUERIES_BUILDING + IMAGE_QUERIES_SIGN + IMAGE_QUERIES_SCENERY
-    for i, query_tmpl in enumerate(all_queries):
-        query = query_tmpl.format(station_name=search_name)
-        logger.info(f"Google画像検索（{i+1}/{len(all_queries)}）: {query}")
-        paths = _google_search_once(query, search_name, output_dir, max_images)
-        if paths:
-            return paths
+    for sname in search_names:
+        # 関連性チェック用の名前（カッコ除去版）
+        relevance_name = clean_name if has_bracket else sname
+        for i, query_tmpl in enumerate(all_queries):
+            query = query_tmpl.format(station_name=sname)
+            logger.info(f"Google画像検索（{i+1}/{len(all_queries)}）: {query}")
+            paths = _google_search_once(query, relevance_name, output_dir, max_images)
+            if paths:
+                return paths
 
     # Wikimedia フォールバック
-    logger.info(f"Google検索結果なし。Wikimediaにフォールバック: {search_name}")
-    return search_wikimedia_images(search_name, output_dir, max_images)
+    fb_name = clean_name if has_bracket else station_name
+    logger.info(f"Google検索結果なし。Wikimediaにフォールバック: {fb_name}")
+    return search_wikimedia_images(fb_name, output_dir, max_images)
 
 
 def _wikimedia_search(query, max_images, output_dir, safe_name, start_idx=0):

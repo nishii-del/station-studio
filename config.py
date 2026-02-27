@@ -33,21 +33,24 @@ IMAGES_PER_STATION = 1
 # 1回の一括取得の上限駅数
 MAX_BULK_STATIONS = 30
 
+# 共通除外ワード
+_EXCLUDE = "-ナンバリング -路線図 -アイコン -工事 -地図 -航空写真 -空撮 -イラスト -図面 -構内図 -配線図"
+
 # 画像検索クエリテンプレート（優先順に試行、1枚取れたら終了）
 # 駅建物・入口（地上駅 + 地下鉄どちらも対応）
 IMAGE_QUERIES_BUILDING = [
-    '"{station_name}駅" 駅舎 外観 -ナンバリング -路線図 -アイコン -工事 -地図',
-    '"{station_name}駅" 外観 全景 -路線図 -アイコン -工事 -地図',
-    '"{station_name}駅" 出入口 地上 -路線図 -アイコン -地図',
-    '"{station_name}駅" 入口 看板 -ナンバリング -路線図 -地図',
+    f'"{{station_name}}駅" 駅舎 外観 写真 {_EXCLUDE}',
+    f'"{{station_name}}駅" 駅ビル 外観 {_EXCLUDE}',
+    f'"{{station_name}}駅" 出入口 写真 {_EXCLUDE}',
+    f'"{{station_name}}駅" 入口 外観 {_EXCLUDE}',
 ]
 # 駅名標
 IMAGE_QUERIES_SIGN = [
-    '"{station_name}駅" 駅名標 -路線図 -アイコン -地図',
+    f'"{{station_name}}駅" 駅名標 {_EXCLUDE}',
 ]
 # 駅周辺の風景
 IMAGE_QUERIES_SCENERY = [
-    '"{station_name}駅" 駅前 風景 -路線図 -アイコン -地図',
+    f'"{{station_name}}駅" 駅前 風景 {_EXCLUDE}',
 ]
 
 # =============================================
