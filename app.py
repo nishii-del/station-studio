@@ -559,7 +559,7 @@ if page == "検索":
     st.session_state["_prev_page"] = "検索"
     st.markdown('<div class="page-sub">駅名リストと風景画像を自動取得します</div>', unsafe_allow_html=True)
 
-    mode = st.radio("モード", ["駅別", "市区別"], horizontal=True)
+    mode = st.radio("モード", ["駅別", "市区別"], horizontal=True, key="_search_mode_radio")
 
     # モード切替時に検索結果をクリア
     prev_mode = st.session_state.get("_search_mode")
