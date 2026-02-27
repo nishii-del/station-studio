@@ -56,7 +56,7 @@ def _render_login_page():
         [data-testid="stAppLocaleDialog"],
         div[role="dialog"][aria-label*="language"],
         div[role="dialog"][aria-label*="言語"],
-        .stModal { display:none !important; }
+        /* 言語選択ダイアログ非表示 */
         .stApp { background: #fafafa !important; overflow:hidden !important; }
         /* サイバーパンク: 縦横無尽の緑線 */
         .cyber-lines {
@@ -200,7 +200,7 @@ st.markdown("""
     [data-testid="stAppLocaleDialog"],
     div[role="dialog"][aria-label*="language"],
     div[role="dialog"][aria-label*="言語"],
-    .stModal { display: none !important; }
+    /* 言語選択ダイアログ非表示 */
     [data-testid="stSidebar"] { background: #fafafa !important; }
     .stImage img { border-radius: 8px !important; }
     [data-testid="collapsedControl"] { display: none !important; }
