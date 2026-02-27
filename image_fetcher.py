@@ -331,21 +331,10 @@ def _google_search_once(query, station_name, output_dir, max_images):
     return saved_paths
 
 
-def _search_category(queries, search_name, output_dir, category_label):
-    """1カテゴリ分のクエリリストを順に試行して1枚取得"""
-    for query_tmpl in queries:
-        query = query_tmpl.format(station_name=search_name)
-        logger.info(f"Google画像検索（{category_label}）: {query}")
-        paths = _google_search_once(query, search_name, output_dir, 1)
-        if paths:
-            return paths
-    return []
-
-
 def search_google_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
     """
-    Google Custom Search APIで駅画像を3カテゴリ取得
-    1. 駅建物/入口  2. 駅名標  3. 駅周辺風景
+    Google Custom Search APIで駅画像を取得（1枚）
+    駅建物 → 駅名標 → 風景 の優先順でクエリを試行
 
     Args:
         station_name: 駅名
@@ -364,22 +353,14 @@ def search_google_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     clean_name = re.sub(r'[\(（〈\[【].+?[\)）〉\]】]', '', station_name).strip()
     search_name = clean_name if clean_name else station_name
 
-    all_paths = []
-
-    # カテゴリ別に1枚ずつ取得
-    categories = [
-        (IMAGE_QUERIES_BUILDING, "駅建物"),
-        (IMAGE_QUERIES_SIGN, "駅名標"),
-        (IMAGE_QUERIES_SCENERY, "風景"),
-    ]
-    for queries, label in categories:
-        if len(all_paths) >= max_images:
-            break
-        paths = _search_category(queries, search_name, output_dir, label)
-        all_paths.extend(paths)
-
-    if all_paths:
-        return all_paths
+    # 全クエリを優先順に統合して試行（1枚取れたら終了）
+    all_queries = IMAGE_QUERIES_BUILDING + IMAGE_QUERIES_SIGN + IMAGE_QUERIES_SCENERY
+    for i, query_tmpl in enumerate(all_queries):
+        query = query_tmpl.format(station_name=search_name)
+        logger.info(f"Google画像検索（{i+1}/{len(all_queries)}）: {query}")
+        paths = _google_search_once(query, search_name, output_dir, max_images)
+        if paths:
+            return paths
 
     # Wikimedia フォールバック
     logger.info(f"Google検索結果なし。Wikimediaにフォールバック: {search_name}")
