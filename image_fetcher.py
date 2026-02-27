@@ -465,7 +465,7 @@ def search_wikimedia_images(station_name, output_dir, max_images=IMAGES_PER_STAT
 def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
     """
     駅画像を取得するメインエントリポイント
-    Wikipedia記事画像 → Google Custom Search → Wikimedia の順で試行
+    Google Custom Search → Wikipedia記事画像 → Wikimedia の順で試行
 
     Args:
         station_name: 駅名
@@ -477,12 +477,17 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     """
     safe_name = _sanitize_filename(station_name)
 
-    # 1. Wikipedia記事のメイン画像（駅舎外観が最も取れやすい）
+    # 1. Google Custom Search（高品質・最新の写真が多い）
+    if GOOGLE_API_KEY != "YOUR_GOOGLE_API_KEY_HERE":
+        paths = search_google_images(station_name, output_dir, max_images)
+        if paths:
+            return paths
+
+    # 2. Wikipedia記事のメイン画像
     logger.info(f"Wikipedia記事画像を検索: {station_name}駅")
     paths = _wikipedia_station_image(station_name, output_dir, safe_name)
+    if paths:
+        return paths
 
-    # 2. Google Custom Search / Wikimedia Commons
-    if not paths:
-        paths = search_google_images(station_name, output_dir, max_images)
-
-    return paths
+    # 3. Wikimedia Commons
+    return search_wikimedia_images(station_name, output_dir, max_images)
