@@ -152,8 +152,11 @@ def _render_login_page():
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
     login_btn = st.button("ログイン", type="primary", use_container_width=True, key="_login_btn")
     if login_btn:
-        st.session_state["authenticated"] = True
-        st.rerun()
+        if login_id == APP_LOGIN_ID and pw == APP_LOGIN_PASSWORD:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("IDまたはパスワードが正しくありません")
 
     st.markdown("""
     <div style="text-align:center; margin-top:2rem;">
