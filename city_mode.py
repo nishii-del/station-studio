@@ -264,7 +264,7 @@ def _rank_stations_by_popularity(station_names, top_n=3):
 
     ranked = []
     for name in station_names:
-        railways_list = station_to_railways.get(name, [])
+        railways_list = sorted(station_to_railways.get(name, set()))
         line_count = len(railways_list)
         coords = station_coords.get(name, {})
         ranked.append({
