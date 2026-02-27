@@ -47,6 +47,11 @@ def _render_login_page():
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600&display=swap');
         [data-testid="stSidebar"] { display:none !important; }
         [data-testid="stHeader"] { display:none !important; }
+        [data-testid="stLocaleDialog"],
+        [data-testid="stAppLocaleDialog"],
+        div[role="dialog"][aria-label*="language"],
+        div[role="dialog"][aria-label*="言語"],
+        .stModal { display:none !important; }
         .stApp { background: #fafafa !important; overflow:hidden !important; }
         /* サイバーパンク: 縦横無尽の緑線 */
         .cyber-lines {
@@ -185,6 +190,12 @@ st.markdown("""
         font-family: 'Noto Sans JP', sans-serif !important;
     }
     .block-container { max-width: 1100px !important; padding-top: 2rem !important; }
+    /* 言語選択ダイアログ非表示 */
+    [data-testid="stLocaleDialog"],
+    [data-testid="stAppLocaleDialog"],
+    div[role="dialog"][aria-label*="language"],
+    div[role="dialog"][aria-label*="言語"],
+    .stModal { display: none !important; }
     [data-testid="stSidebar"] { background: #fafafa !important; }
     .stImage img { border-radius: 8px !important; }
     [data-testid="collapsedControl"] { display: none !important; }
