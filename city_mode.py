@@ -255,7 +255,7 @@ def fetch_passenger_count(station_name, prefecture=None):
             continue
 
         # 曖昧さ回避ページかチェック
-        is_disambig = "曖昧さ回避" in wikitext or "Disambig" in wikitext
+        is_disambig = "曖昧さ回避" in wikitext or "Disambig" in wikitext or "{{Aimai}}" in wikitext or "{{aimai}}" in wikitext or len(wikitext) < 1000
 
         total = _parse_passenger_from_wikitext(wikitext)
         if total is not None:
@@ -282,9 +282,76 @@ def fetch_passenger_count(station_name, prefecture=None):
     return {"passengers": None, "passenger_label": None}
 
 
+def _batch_fetch_passenger_counts(station_names, prefecture=None):
+    """
+    Wikipedia APIで一括取得（50件ずつ）して乗降者数を返す。
+    曖昧さ回避ページは都道府県名付きで再試行。
+
+    Returns:
+        dict[str, int|None]: {駅名: 乗降者数}
+    """
+    results = {}
+    titles_map = {}  # wiki_title -> station_name
+    for name in station_names:
+        title = f"{name}駅"
+        titles_map[title] = name
+
+    # 20件ずつバッチ取得（コンテンツが大きいため少なめに）
+    title_list = list(titles_map.keys())
+    disambig_stations = []
+    for i in range(0, len(title_list), 20):
+        batch = title_list[i:i+20]
+        try:
+            resp = requests.get(
+                "https://ja.wikipedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "titles": "|".join(batch),
+                    "prop": "revisions",
+                    "rvprop": "content",
+                    "rvslots": "main",
+                    "format": "json",
+                },
+                headers={"User-Agent": "StationStudio/1.0"},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            pages = data.get("query", {}).get("pages", {})
+            for pid, page in pages.items():
+                if pid == "-1":
+                    continue
+                title = page.get("title", "")
+                revs = page.get("revisions", [])
+                if not revs:
+                    continue
+                slots = revs[0].get("slots", {}).get("main", {})
+                wikitext = slots.get("*", "") or revs[0].get("*", "")
+                station_name = titles_map.get(title)
+                if not station_name:
+                    continue
+
+                total = _parse_passenger_from_wikitext(wikitext)
+                if total is not None:
+                    results[station_name] = total
+                elif "曖昧さ回避" in wikitext or "Disambig" in wikitext or "{{Aimai}}" in wikitext or "{{aimai}}" in wikitext or len(wikitext) < 1000:
+                    disambig_stations.append(station_name)
+        except Exception as e:
+            logger.error(f"Wikipedia一括取得エラー: {e}")
+
+    # 曖昧さ回避ページは都道府県名付きで個別再試行
+    if prefecture:
+        for name in disambig_stations:
+            pax = fetch_passenger_count(name, prefecture=prefecture)
+            if pax.get("passengers"):
+                results[name] = pax["passengers"]
+
+    return results
+
+
 def _rank_stations_by_popularity(station_names, top_n=3, prefecture=None):
     """
-    乗降者数（Wikipedia）で駅をランキングし上位N件を返す。
+    乗降者数（Wikipedia一括取得）で駅をランキングし上位N件を返す。
 
     Args:
         station_names: Overpassで取得した駅名リスト
@@ -292,35 +359,30 @@ def _rank_stations_by_popularity(station_names, top_n=3, prefecture=None):
         prefecture: 都道府県名（Wikipedia曖昧さ回避対策）
 
     Returns:
-        list[dict]: [{"name": str, "line_count": int, "passengers": int|None, "lat": float|None, "lon": float|None}, ...]
+        list[dict]
     """
     station_to_railways, _railway_stations, station_coords = fetch_rail_graph()
 
-    # 全駅に路線数を付与
+    # 全駅の乗降者数を一括取得
+    pax_map = _batch_fetch_passenger_counts(station_names, prefecture=prefecture)
+
     all_stations = []
     for name in station_names:
         railways_list = sorted(station_to_railways.get(name, set()))
-        line_count = len(railways_list)
         coords = station_coords.get(name, {})
         all_stations.append({
             "name": name,
-            "line_count": line_count,
+            "line_count": len(railways_list),
             "railways": railways_list,
             "lat": coords.get("lat"),
             "lon": coords.get("lon"),
+            "passengers": pax_map.get(name),
         })
 
-    # 路線数で上位20駅に絞ってから乗降者数を取得（API負荷軽減）
-    all_stations.sort(key=lambda x: x["line_count"], reverse=True)
-    candidates = all_stations[:max(top_n * 4, 20)]
-    for st_info in candidates:
-        pax = fetch_passenger_count(st_info["name"], prefecture=prefecture)
-        st_info["passengers"] = pax.get("passengers")
+    # 乗降者数で降順（データなしは末尾）
+    all_stations.sort(key=lambda x: (x["passengers"] or 0), reverse=True)
 
-    # 乗降者数で降順（データなしは末尾、同数なら路線数で）
-    candidates.sort(key=lambda x: (x["passengers"] or 0, x["line_count"]), reverse=True)
-
-    top = candidates[:top_n]
+    top = all_stations[:top_n]
     logger.info(f"上位{top_n}駅（乗降者数順）: {[(s['name'], s.get('passengers', 0)) for s in top]}")
     return top
 
