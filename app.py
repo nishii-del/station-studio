@@ -243,17 +243,17 @@ st.markdown("""
     }
     .num-card .num { font-size: 1.5rem; font-weight: 700; color: #475569; }
     .num-card .num-label { font-size: 0.7rem; color: #999; margin-top: 0.1rem; white-space: nowrap; }
-    .st-card {
+    .stn-card {
         background: #fff; border: 1px solid #eee; border-radius: 10px;
         padding: 1rem; margin-bottom: 0.6rem;
     }
-    .st-card .st-name { font-size: 0.95rem; font-weight: 600; color: #1a1a1a; margin-bottom: 0.25rem; }
-    .st-card .st-badge {
-        display: inline-block; font-size: 0.7rem; font-weight: 500;
+    .stn-card .stn-name { font-size: 1.1rem; font-weight: 700; color: #1a1a1a; margin-bottom: 0.3rem; }
+    .stn-card .stn-badge {
+        display: inline-block; font-size: 0.65rem; font-weight: 500;
         color: #475569; background: #f0f2f5; padding: 0.1rem 0.45rem;
         border-radius: 4px;
     }
-    .st-card .st-badge.cached {
+    .stn-card .stn-badge.cached {
         color: #2563eb; background: #eff6ff;
     }
     /* マルチセレクト: タグ名を省略せず全文表示 */
@@ -480,13 +480,13 @@ def _render_cards(stations, json_dir, selectable=False, railway_prefix="", show_
 
             # 保管庫チェック（駅名から末尾の「駅」を除去して確認）
             raw_name = name.rstrip("駅")
-            cached_badge = '<span class="st-badge cached">保管庫あり</span> ' if has_cached_images(raw_name) or has_cached_images(name) else ""
+            cached_badge = '<span class="stn-badge cached">保管庫あり</span> ' if has_cached_images(raw_name) or has_cached_images(name) else ""
 
             checked_style = "" if not selectable else ("" if st.session_state.get(f"cb_{railway_prefix}_{name}", True) else "opacity:0.4;")
             st.markdown(f"""
-            <div class="st-card" style="{checked_style}">
-                <div class="st-name">{name}</div>
-                {cached_badge}<span class="st-badge">{badge_text}</span>
+            <div class="stn-card" style="{checked_style}">
+                <div class="stn-name">{name}</div>
+                {cached_badge}<span class="stn-badge">{badge_text}</span>
             </div>""", unsafe_allow_html=True)
 
             if show_images and image_paths:
@@ -1314,9 +1314,9 @@ elif page == "ライブラリ":
                             t_time = s.get("travel_time")
                             badge = f"約{t_time}分" if t_time else ""
                         checked_style = "" if is_checked else "opacity:0.4;"
-                        st.markdown(f'''<div class="st-card" style="{checked_style}">
-                            <div class="st-name">{s_name}</div>
-                            <span class="st-badge">{badge}</span>
+                        st.markdown(f'''<div class="stn-card" style="{checked_style}">
+                            <div class="stn-name">{s_name}</div>
+                            <span class="stn-badge">{badge}</span>
                         </div>''', unsafe_allow_html=True)
                         if is_checked:
                             for img_p in s.get("image_path", []):
@@ -1549,9 +1549,9 @@ elif page == "保管庫":
                         _checked_set.discard(name)
 
                     checked_style = "" if new_val else "opacity:0.4;"
-                    st.markdown(f'''<div class="st-card" style="{checked_style}">
-                        <div class="st-name">{name}</div>
-                        <span class="st-badge cached">{badge_text}</span>
+                    st.markdown(f'''<div class="stn-card" style="{checked_style}">
+                        <div class="stn-name">{name}</div>
+                        <span class="stn-badge cached">{badge_text}</span>
                         <div style="font-size:0.65rem;color:#bbb;margin-top:0.3rem;">{cached_at}</div>
                     </div>''', unsafe_allow_html=True)
 
