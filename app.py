@@ -532,7 +532,7 @@ with st.sidebar:
     st.markdown(f"""<div translate="no" style="font-size:0.9rem;line-height:2;">
 <b>Overpass</b> <span style="color:#64748B;">接続中</span> <span style="color:#aaa;font-size:0.8em;">駅情報</span><br>
 <b>Wikipedia</b> <span style="color:#64748B;">接続中</span> <span style="color:#aaa;font-size:0.8em;">写真</span><br>
-<b>Google Cloud</b> <span style="color:{gcolor};">{gtext}</span> <span style="color:#aaa;font-size:0.8em;">写真</span>
+<b>Google Places API</b> <span style="color:{gcolor};">{gtext}</span> <span style="color:#aaa;font-size:0.8em;">写真</span>
 </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
