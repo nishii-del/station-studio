@@ -263,28 +263,23 @@ def _rank_stations_by_popularity(station_names, top_n=3):
     """
     station_to_railways, _railway_stations, station_coords = fetch_rail_graph()
 
-    # 全駅に路線数を付与
+    # 全駅に路線数・乗降者数を付与
     all_stations = []
     for name in station_names:
         railways_list = sorted(station_to_railways.get(name, set()))
         line_count = len(railways_list)
         coords = station_coords.get(name, {})
+        pax = fetch_passenger_count(name)
         all_stations.append({
             "name": name,
             "line_count": line_count,
             "railways": railways_list,
             "lat": coords.get("lat"),
             "lon": coords.get("lon"),
+            "passengers": pax.get("passengers"),
         })
 
-    # 路線数で上位候補を絞る（乗降者数取得のAPI負荷軽減）
-    all_stations.sort(key=lambda x: x["line_count"], reverse=True)
-    candidates = all_stations[:max(top_n * 3, 15)]
-
-    # 乗降者数を取得してランキング
-    for st_info in candidates:
-        pax = fetch_passenger_count(st_info["name"])
-        st_info["passengers"] = pax.get("passengers")
+    candidates = all_stations
 
     # 乗降者数で降順（データなしは末尾、同数なら路線数で）
     candidates.sort(key=lambda x: (x["passengers"] or 0, x["line_count"]), reverse=True)
