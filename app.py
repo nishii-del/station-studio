@@ -206,6 +206,13 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap');
     html { translate: no !important; }
+    /* ページ遷移アニメーション無効化 */
+    .stApp, .main, .block-container, [data-testid="stMain"],
+    .stMainBlockContainer, section[data-testid="stSidebar"],
+    .element-container, .stMarkdown, [data-testid="stVerticalBlock"] {
+        transition: none !important;
+        animation: none !important;
+    }
     h1,h2,h3,h4,p,span,div,label {
         font-family: 'Noto Sans JP', sans-serif !important;
     }
