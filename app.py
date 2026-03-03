@@ -140,7 +140,7 @@ def _render_login_page():
         .login-ai-badge { animation: aiBadgePulse 3s ease-in-out infinite; }
     </style>
     <div style="text-align:center; margin-bottom:0.3rem;">
-        <div class="login-logo" style="font-family:'Outfit',sans-serif; font-size:2.6rem; font-weight:700;
+        <div class="login-logo" translate="no" style="font-family:'Outfit',sans-serif; font-size:2.6rem; font-weight:700;
             color:#222; text-transform:uppercase; letter-spacing:-0.01em;">
             ST<span class="login-ai-badge" style="display:inline-block; color:#fff;
             background:linear-gradient(135deg,#2d8a4e,#5dbb63);
@@ -527,10 +527,10 @@ with st.sidebar:
     st.caption("接続状況")
     warnings = validate_keys()
     google_ok = "GOOGLE_API_KEY" not in " ".join(warnings)
-    st.markdown("駅情報 — <span style='color:#64748B;font-weight:600;'>接続中</span>", unsafe_allow_html=True)
-    st.markdown("写真取得① — <span style='color:#64748B;font-weight:600;'>接続中</span>", unsafe_allow_html=True)
+    st.markdown("<span translate='no'>Overpass</span> — <span style='color:#64748B;font-weight:600;'>接続中</span> <span style='color:#aaa;font-size:0.8em;'>駅情報</span>", unsafe_allow_html=True)
+    st.markdown("<span translate='no'>Wikipedia</span> — <span style='color:#64748B;font-weight:600;'>接続中</span> <span style='color:#aaa;font-size:0.8em;'>写真</span>", unsafe_allow_html=True)
     gstatus = "<span style='color:#64748B;font-weight:600;'>接続中</span>" if google_ok else "<span style='color:#aaa;'>未設定</span>"
-    st.markdown(f"写真取得② — {gstatus}", unsafe_allow_html=True)
+    st.markdown(f"<span translate='no'>Google Cloud</span> — {gstatus} <span style='color:#aaa;font-size:0.8em;'>写真</span>", unsafe_allow_html=True)
 
     st.markdown("---")
     lib_count = 0
