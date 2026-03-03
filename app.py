@@ -185,27 +185,14 @@ if not st.session_state.get("authenticated", False):
 
 
 st.markdown('<meta name="google" content="notranslate"><meta http-equiv="Content-Language" content="ja">', unsafe_allow_html=True)
-import streamlit.components.v1 as _components
-_components.html("""<script>
-var d = window.parent.document;
-d.documentElement.lang = 'ja';
-d.documentElement.translate = false;
-d.documentElement.classList.add('notranslate');
-d.querySelector('meta[name="google"]') || (function(){
-    var m = d.createElement('meta');
-    m.name = 'google';
-    m.content = 'notranslate';
-    d.head.appendChild(m);
-})();
-// Chrome翻訳バーを非表示
-var tb = d.querySelector('.goog-te-banner-frame');
-if(tb) tb.style.display = 'none';
-d.body.style.top = '0px';
-</script>""", height=0)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap');
-    html { translate: no !important; }
+    html { translate: no !important; lang: ja !important; }
+    .notranslate { translate: no !important; }
+    /* Chrome翻訳バー非表示 */
+    .goog-te-banner-frame, #goog-gt-tt, .goog-te-balloon-frame { display: none !important; }
+    body { top: 0 !important; }
     /* ページ遷移アニメーション無効化 */
     .stApp, .main, .block-container, [data-testid="stMain"],
     .stMainBlockContainer, section[data-testid="stSidebar"],
