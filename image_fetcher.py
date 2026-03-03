@@ -421,7 +421,7 @@ def _score_image_filename(title, station_name):
         'train', '電車', '列車', '車両', '系電車', '系気動車',
         'series',
         'interior', '改札', 'concourse', '構内', 'ticket', '券売',
-        'gate',
+        'fare gate', 'ticket gate',
         'map', 'diagram', 'logo', 'symbol', 'banner', 'icon', 'pictogram',
         'route', '路線', 'linemap',
         'aerial', 'panorama', 'skyline',
@@ -676,6 +676,90 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
     return []
 
 
+def _wikimedia_commons_search(station_name, output_dir, safe_name):
+    """
+    Wikimedia Commons検索で駅舎外観写真を探す。
+    Wikipedia記事に含まれない写真もヒットする。
+    """
+    search_queries = [
+        f"{station_name}駅 駅舎",
+        f"{station_name}駅 外観",
+        f"{station_name} station building",
+    ]
+
+    for query in search_queries:
+        try:
+            resp = requests.get(
+                "https://commons.wikimedia.org/w/api.php",
+                params={
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": query,
+                    "srnamespace": 6,
+                    "srlimit": 10,
+                    "format": "json",
+                },
+                headers=_HEADERS,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.RequestException as e:
+            logger.debug(f"Commons検索エラー: {e}")
+            continue
+
+        results = data.get("query", {}).get("search", [])
+        if not results:
+            continue
+
+        # スコアリングして最適な候補を選択
+        scored = []
+        for r in results:
+            title = r.get("title", "")
+            score = _score_image_filename(title, station_name)
+            if score is not None and score >= 0:
+                scored.append((title, score))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        if not scored:
+            continue
+
+        # URL取得してダウンロード
+        top_titles = [t for t, s in scored[:5]]
+        url_map = _get_wikipedia_image_urls(top_titles)
+
+        for title, filename_score in scored[:5]:
+            image_url = url_map.get(title, "")
+            if not image_url:
+                continue
+            lower_url = image_url.lower()
+            if '.svg' in lower_url or '.gif' in lower_url:
+                continue
+
+            ext = ".png" if ".png" in lower_url else ".jpg"
+            save_path = os.path.join(output_dir, f"{safe_name}_1{ext}")
+
+            if _download_image(image_url, save_path):
+                if not _is_outdoor_photo(save_path):
+                    os.remove(save_path)
+                    continue
+                if _is_aerial_photo(save_path):
+                    os.remove(save_path)
+                    continue
+                if _is_train_or_platform_photo(save_path):
+                    os.remove(save_path)
+                    continue
+
+                logger.info(f"Commons: 駅舎外観取得成功: {station_name}駅 ({title})")
+                return [save_path]
+
+            time.sleep(REQUEST_DELAY)
+
+    logger.info(f"Commons: 駅舎外観写真なし: {station_name}駅")
+    return []
+
+
 def _places_search_station(station_name):
     """
     Google Places API (New) Text Search で駅を検索し、写真リファレンスを取得。
@@ -919,7 +1003,13 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     if paths:
         return paths
 
-    # 2. Google Places API (New)
+    # 2. Wikimedia Commons検索（Wikipedia記事にない写真も探す）
+    logger.info(f"Wikimedia Commonsで画像検索: {station_name}駅")
+    paths = _wikimedia_commons_search(station_name, output_dir, safe_name)
+    if paths:
+        return paths
+
+    # 3. Google Places API (New)
     logger.info(f"Places APIで画像検索: {station_name}駅")
     paths = search_places_images(station_name, output_dir, max_images)
     if paths:
