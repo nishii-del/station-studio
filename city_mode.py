@@ -175,15 +175,19 @@ def _parse_passenger_from_wikitext(wikitext):
         multiplier = 1 if label == "乗降人員" else 2
         for m in re.finditer(rf"\|\s*{label}\s*=\s*(.+)", wikitext):
             line = m.group(1)
+            # テンプレート除去を先に（{{Smaller|...}} 内の | で誤分割を防止）
+            line = re.sub(r"\{\{[^}]*\}\}", "", line)
+            line = re.sub(r"<ref[^>]*/>", "", line)
+            line = re.sub(r"<ref[^>]*>.*?</ref>", "", line, flags=re.DOTALL)
+            line = re.sub(r"<!--.*?-->", "", line)
+            line = re.sub(r"<br\s*/?>", " ", line)
+            line = re.sub(r"<hr\s*/?>", " ", line)
+            line = line.replace("'''", "")
+            line = re.sub(r"（[^）]*）", " ", line)
+            # テンプレート除去後にパイプで分割
             pipe_pos = line.find("|")
             if pipe_pos >= 0:
                 line = line[:pipe_pos]
-            line = re.sub(r"<ref[^>]*/>", "", line)
-            line = re.sub(r"<ref[^>]*>.*?</ref>", "", line, flags=re.DOTALL)
-            line = re.sub(r"<br\s*/?>", " ", line)
-            line = line.replace("'''", "")
-            line = re.sub(r"（[^）]*）", " ", line)
-            line = re.sub(r"\{\{[^}]*\}\}", "", line)
             numbers = re.findall(r"([\d,]+)\s*人", line)
             if numbers:
                 for n in numbers:
