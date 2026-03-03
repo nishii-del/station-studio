@@ -65,19 +65,46 @@ def _classify_station_type(station_name, railways=None):
     return "local"
 
 
+# ターミナル駅ごとの象徴的なランドマーク（Commonsで検索しやすいキーワード）
+_TERMINAL_LANDMARKS = {
+    "渋谷": ["Shibuya Crossing", "渋谷スクランブル交差点", "Shibuya scramble"],
+    "新宿": ["Shinjuku skyscrapers", "新宿高層ビル", "Shinjuku skyline"],
+    "池袋": ["Ikebukuro Sunshine", "池袋サンシャイン", "Ikebukuro east exit"],
+    "東京": ["Tokyo Station Marunouchi", "東京駅丸の内", "Tokyo Station red brick"],
+    "品川": ["Shinagawa skyline", "品川 高層ビル"],
+    "上野": ["Ueno Park", "上野公園", "Ueno Ameyoko"],
+    "秋葉原": ["Akihabara electric town", "秋葉原 電気街"],
+    "横浜": ["Yokohama Minato Mirai", "横浜みなとみらい", "Yokohama landmark tower"],
+    "大阪": ["Osaka Dotonbori", "大阪道頓堀", "Osaka cityscape"],
+    "梅田": ["Umeda Sky Building", "梅田スカイビル"],
+    "京都": ["Kyoto Tower", "京都タワー"],
+    "名古屋": ["Nagoya Station towers", "名古屋駅前 高層ビル"],
+    "博多": ["Hakata Canal City", "博多キャナルシティ"],
+    "仙台": ["Sendai arcade", "仙台アーケード"],
+    "札幌": ["Sapporo TV Tower", "札幌テレビ塔"],
+}
+
+
 def _generate_search_queries(station_name, station_type):
     """
     駅タイプに応じた最適な検索クエリを生成。
     Returns: dict with commons_queries, places_query, exclude_keywords
     """
     if station_type == "terminal":
-        commons = [
-            f"{station_name} landmark",
-            f"{station_name} 街並み",
-            f"{station_name} cityscape",
-        ]
-        places = f"{station_name} ランドマーク 街並み"
-        exclude = ['platform', 'interior', 'map', 'diagram']
+        # 駅固有のランドマーク検索があればそれを使う
+        landmarks = _TERMINAL_LANDMARKS.get(station_name)
+        if landmarks:
+            commons = landmarks[:3]
+            places = landmarks[0]
+        else:
+            commons = [
+                f"{station_name} cityscape",
+                f"{station_name} 街並み 風景",
+                f"{station_name} skyline",
+            ]
+            places = f"{station_name} 街並み ランドマーク"
+        exclude = ['platform', 'interior', 'map', 'diagram', '改札',
+                   'ticket', 'concourse', 'train', '電車', 'ホーム']
 
     elif station_type == "subway":
         commons = [
@@ -723,10 +750,11 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
     return []
 
 
-def _wikimedia_commons_search(station_name, output_dir, safe_name, search_queries=None):
+def _wikimedia_commons_search(station_name, output_dir, safe_name,
+                              search_queries=None, station_type=None):
     """
-    Wikimedia Commons検索で駅舎外観写真を探す。
-    Wikipedia記事に含まれない写真もヒットする。
+    Wikimedia Commons検索で写真を探す。
+    station_type="terminal" の場合、駅関連の写真を追加で拒否する。
     """
     if search_queries is None:
         search_queries = [
@@ -734,6 +762,12 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name, search_querie
             f"{station_name}駅 外観",
             f"{station_name} station building",
         ]
+
+    # ターミナル駅: 駅の写真ではなくランドマーク写真が欲しい → 駅関連を追加拒否
+    terminal_reject = [
+        'station', '駅', 'eki', 'gate', '改札', '駅舎', 'platform', 'ホーム',
+        'concourse', '構内', 'ticket', 'train', '電車', '列車',
+    ] if station_type == "terminal" else []
 
     for query in search_queries:
         try:
@@ -744,7 +778,7 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name, search_querie
                     "list": "search",
                     "srsearch": query,
                     "srnamespace": 6,
-                    "srlimit": 10,
+                    "srlimit": 15,
                     "format": "json",
                 },
                 headers=_HEADERS,
@@ -764,6 +798,12 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name, search_querie
         scored = []
         for r in results:
             title = r.get("title", "")
+            # ターミナル駅: 駅関連ファイル名を拒否
+            if terminal_reject:
+                lower_title = title.lower()
+                if any(kw in lower_title for kw in terminal_reject):
+                    logger.debug(f"Commons: ターミナル駅 駅関連拒否: {title}")
+                    continue
             score = _score_image_filename(title, station_name)
             if score is not None and score >= 0:
                 scored.append((title, score))
@@ -1056,29 +1096,52 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     station_type = _classify_station_type(station_name, railways=railways)
     queries = _generate_search_queries(station_name, station_type)
 
-    # 1. Wikipedia記事の画像（ファイル名スコアリング＋品質チェック）
-    logger.info(f"Wikipedia記事画像を検索: {station_name}駅")
-    paths = _wikipedia_station_image(station_name, output_dir, safe_name)
-    if paths:
-        return paths
+    if station_type == "terminal":
+        # ターミナル駅: 街のランドマーク・象徴的風景を優先
+        # Wikipedia駅記事には駅舎・改札等の写真しかないのでスキップ
+        logger.info(f"ターミナル駅: ランドマーク検索: {station_name} (Wikipedia駅記事スキップ)")
 
-    # 2. Wikimedia Commons検索（駅タイプ別クエリ）
-    logger.info(f"Wikimedia Commonsで画像検索: {station_name}駅 (type={station_type})")
-    paths = _wikimedia_commons_search(
-        station_name, output_dir, safe_name,
-        search_queries=queries["commons_queries"],
-    )
-    if paths:
-        return paths
+        # 1. Wikimedia Commonsでランドマーク検索
+        paths = _wikimedia_commons_search(
+            station_name, output_dir, safe_name,
+            search_queries=queries["commons_queries"],
+            station_type="terminal",
+        )
+        if paths:
+            return paths
 
-    # 3. Google Places API（駅タイプ別クエリ）
-    logger.info(f"Places APIで画像検索: {station_name}駅 (type={station_type})")
-    paths = search_places_images(
-        station_name, output_dir, max_images,
-        places_query=queries["places_query"],
-    )
-    if paths:
-        return paths
+        # 2. Google Places APIでランドマーク検索
+        paths = search_places_images(
+            station_name, output_dir, max_images,
+            places_query=queries["places_query"],
+        )
+        if paths:
+            return paths
+    else:
+        # subway / local: Wikipedia駅記事 → Commons → Places API
+        # 1. Wikipedia記事の画像（ファイル名スコアリング＋品質チェック）
+        logger.info(f"Wikipedia記事画像を検索: {station_name}駅")
+        paths = _wikipedia_station_image(station_name, output_dir, safe_name)
+        if paths:
+            return paths
+
+        # 2. Wikimedia Commons検索（駅タイプ別クエリ）
+        logger.info(f"Wikimedia Commonsで画像検索: {station_name}駅 (type={station_type})")
+        paths = _wikimedia_commons_search(
+            station_name, output_dir, safe_name,
+            search_queries=queries["commons_queries"],
+        )
+        if paths:
+            return paths
+
+        # 3. Google Places API（駅タイプ別クエリ）
+        logger.info(f"Places APIで画像検索: {station_name}駅 (type={station_type})")
+        paths = search_places_images(
+            station_name, output_dir, max_images,
+            places_query=queries["places_query"],
+        )
+        if paths:
+            return paths
 
     logger.info(f"画像取得失敗: {station_name}駅")
     return []
