@@ -251,23 +251,25 @@ def fetch_passenger_count(station_name):
 
 def _rank_stations_by_popularity(station_names, top_n=3):
     """
-    鉄道グラフの乗り入れ路線数で駅をランキングし上位N件を返す
+    乗降者数（Wikipedia）で駅をランキングし上位N件を返す。
+    まず路線数で上位候補を絞り、その中から乗降者数で最終ランキング。
 
     Args:
         station_names: Overpassで取得した駅名リスト
         top_n: 上位何件を返すか
 
     Returns:
-        list[dict]: [{"name": str, "line_count": int, "lat": float|None, "lon": float|None}, ...]
+        list[dict]: [{"name": str, "line_count": int, "passengers": int|None, "lat": float|None, "lon": float|None}, ...]
     """
     station_to_railways, _railway_stations, station_coords = fetch_rail_graph()
 
-    ranked = []
+    # 全駅に路線数を付与
+    all_stations = []
     for name in station_names:
         railways_list = sorted(station_to_railways.get(name, set()))
         line_count = len(railways_list)
         coords = station_coords.get(name, {})
-        ranked.append({
+        all_stations.append({
             "name": name,
             "line_count": line_count,
             "railways": railways_list,
@@ -275,11 +277,20 @@ def _rank_stations_by_popularity(station_names, top_n=3):
             "lon": coords.get("lon"),
         })
 
-    # 路線数で降順ソート（同数なら元の順序を維持）
-    ranked.sort(key=lambda x: x["line_count"], reverse=True)
+    # 路線数で上位候補を絞る（乗降者数取得のAPI負荷軽減）
+    all_stations.sort(key=lambda x: x["line_count"], reverse=True)
+    candidates = all_stations[:max(top_n * 3, 15)]
 
-    top = ranked[:top_n]
-    logger.info(f"上位{top_n}駅: {[(s['name'], s['line_count']) for s in top]}")
+    # 乗降者数を取得してランキング
+    for st_info in candidates:
+        pax = fetch_passenger_count(st_info["name"])
+        st_info["passengers"] = pax.get("passengers")
+
+    # 乗降者数で降順（データなしは末尾、同数なら路線数で）
+    candidates.sort(key=lambda x: (x["passengers"] or 0, x["line_count"]), reverse=True)
+
+    top = candidates[:top_n]
+    logger.info(f"上位{top_n}駅（乗降者数順）: {[(s['name'], s.get('passengers', 0)) for s in top]}")
     return top
 
 
@@ -330,8 +341,11 @@ def run_city_mode(prefecture, city):
         # 相対パスに変換
         rel_paths = [os.path.relpath(p, os.path.dirname(output_subdir)) for p in image_paths]
 
-        # Wikipedia乗降客数を取得
-        pax = fetch_passenger_count(station_name)
+        # 乗降者数はランキング時に取得済み、なければ再取得
+        passengers = st_info.get("passengers")
+        if passengers is None:
+            pax = fetch_passenger_count(station_name)
+            passengers = pax.get("passengers")
 
         station_entry = {
             "name": f"{station_name}駅",
@@ -340,8 +354,8 @@ def run_city_mode(prefecture, city):
             "lat": st_info["lat"],
             "lon": st_info["lon"],
             "image_path": rel_paths,
-            "passengers": pax["passengers"],
-            "passenger_label": pax["passenger_label"],
+            "passengers": passengers,
+            "passenger_label": "乗降人員（全社合算）" if passengers else None,
         }
         stations_data.append(station_entry)
 
