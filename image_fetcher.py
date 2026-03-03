@@ -345,7 +345,7 @@ def _is_train_or_platform_photo(image_path):
             return False
 
         uniform_ratio = uniform_rows / total_rows
-        if uniform_ratio > 0.45:
+        if uniform_ratio > 0.35:
             logger.debug(f"電車判定: uniform={uniform_ratio:.2f} → 電車(均一帯)")
             return True
 
@@ -831,8 +831,8 @@ def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     tried = 0
 
     for photo, meta_score in scored:
-        if best_path and best_score > 80 and tried >= 3:
-            break  # 十分良い写真が見つかり、3枚以上試した
+        if best_path and best_score > 80 and tried >= 5:
+            break  # 十分良い写真が見つかり、5枚以上試した
 
         photo_name = photo.get("name", "")
         if not photo_name:
