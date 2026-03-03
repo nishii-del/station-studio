@@ -72,11 +72,11 @@ def _generate_search_queries(station_name, station_type):
     """
     if station_type == "terminal":
         commons = [
-            f"{station_name}駅 駅舎 外観",
-            f"{station_name}駅 建物",
-            f"{station_name} station building exterior",
+            f"{station_name} landmark",
+            f"{station_name} 街並み",
+            f"{station_name} cityscape",
         ]
-        places = f"{station_name}駅 駅ビル 外観"
+        places = f"{station_name} ランドマーク 街並み"
         exclude = ['platform', 'interior', 'map', 'diagram']
 
     elif station_type == "subway":
