@@ -527,10 +527,10 @@ with st.sidebar:
     st.caption("接続状況")
     warnings = validate_keys()
     google_ok = "GOOGLE_API_KEY" not in " ".join(warnings)
-    st.markdown("OpenStreetMap — <span style='color:#64748B;font-weight:600;'>接続中</span> <span style='color:#aaa;font-size:0.8em;'>駅情報</span>", unsafe_allow_html=True)
-    st.markdown("Wikipedia — <span style='color:#64748B;font-weight:600;'>接続中</span> <span style='color:#aaa;font-size:0.8em;'>写真・商用OK</span>", unsafe_allow_html=True)
+    st.markdown("駅情報 — <span style='color:#64748B;font-weight:600;'>接続中</span>", unsafe_allow_html=True)
+    st.markdown("写真取得① — <span style='color:#64748B;font-weight:600;'>接続中</span>", unsafe_allow_html=True)
     gstatus = "<span style='color:#64748B;font-weight:600;'>接続中</span>" if google_ok else "<span style='color:#aaa;'>未設定</span>"
-    st.markdown(f"Places API — {gstatus} <span style='color:#aaa;font-size:0.8em;'>写真・商用OK</span>", unsafe_allow_html=True)
+    st.markdown(f"写真取得② — {gstatus}", unsafe_allow_html=True)
 
     st.markdown("---")
     lib_count = 0
