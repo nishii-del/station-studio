@@ -12,13 +12,17 @@ import logging
 # 取得先: https://developer.odpt.org/
 ODPT_CONSUMER_KEY = os.environ.get("ODPT_CONSUMER_KEY", "YOUR_ODPT_KEY_HERE")
 
-# Google Custom Search API キー
+# Google API キー（Places API に使用）
 # 取得先: https://console.cloud.google.com/
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "YOUR_GOOGLE_API_KEY_HERE")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyDXVRRnsZdv618dT1iPai0jZpjP9HnMteQ")
 
-# Google Programmable Search Engine ID
-# 取得先: https://programmablesearchengine.google.com/
-GOOGLE_CSE_ID = os.environ.get("GOOGLE_CSE_ID", "YOUR_CSE_ID_HERE")
+# Places API (New) エンドポイント
+PLACES_TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
+PLACES_PHOTO_URL_TEMPLATE = "https://places.googleapis.com/v1/{photo_name}/media"
+
+# Places API 写真設定
+PLACES_PHOTO_MAX_WIDTH = 1200   # 写真の最大幅 (px)
+PLACES_PHOTO_CANDIDATES = 10    # 1駅あたりの写真候補数
 
 # =============================================
 # 画像設定
@@ -33,33 +37,12 @@ IMAGES_PER_STATION = 1
 # 1回の一括取得の上限駅数
 MAX_BULK_STATIONS = 30
 
-# 共通除外ワード
-_EXCLUDE = "-ナンバリング -路線図 -アイコン -工事 -地図 -航空写真 -空撮 -イラスト -図面 -構内図 -配線図"
-
-# 画像検索クエリテンプレート（優先順に試行、1枚取れたら終了）
-# 駅建物・入口（地上駅 + 地下鉄どちらも対応）
-IMAGE_QUERIES_BUILDING = [
-    f'"{{station_name}}駅" 駅舎 外観 写真 {_EXCLUDE}',
-    f'"{{station_name}}駅" 駅ビル 外観 {_EXCLUDE}',
-    f'"{{station_name}}駅" 出入口 写真 {_EXCLUDE}',
-    f'"{{station_name}}駅" 入口 外観 {_EXCLUDE}',
-]
-# 駅名標
-IMAGE_QUERIES_SIGN = [
-    f'"{{station_name}}駅" 駅名標 {_EXCLUDE}',
-]
-# 駅周辺の風景
-IMAGE_QUERIES_SCENERY = [
-    f'"{{station_name}}駅" 駅前 風景 {_EXCLUDE}',
-]
-
 # =============================================
 # API エンドポイント
 # =============================================
 
 ODPT_BASE_URL = "https://api.odpt.org/api/v4"
 OVERPASS_API_URL = "https://overpass-api.de/api/interpreter"
-WIKIMEDIA_API_URL = "https://commons.wikimedia.org/w/api.php"
 
 # =============================================
 # 出力ディレクトリ
@@ -85,7 +68,7 @@ APP_DELETE_PASSWORD = os.environ.get("STATION_STUDIO_DELETE_PW", "delete2024")
 
 # ユーザーアカウント {ID: パスワード}
 APP_USERS = {
-    "ishii":      "St@ishii2024",
+    "ishii":      "1417",
     "obuchi":     "St@obuchi2024",
     "takeuchi":   "St@takeuchi2024",
     "hirayama":   "St@hirayama2024",
@@ -114,7 +97,5 @@ def validate_keys():
     if ODPT_CONSUMER_KEY == "YOUR_ODPT_KEY_HERE":
         warnings.append("ODPT_CONSUMER_KEY が未設定です（駅別モードに必要）")
     if GOOGLE_API_KEY == "YOUR_GOOGLE_API_KEY_HERE":
-        warnings.append("GOOGLE_API_KEY が未設定です（画像検索に必要）")
-    if GOOGLE_CSE_ID == "YOUR_CSE_ID_HERE":
-        warnings.append("GOOGLE_CSE_ID が未設定です（画像検索に必要）")
+        warnings.append("GOOGLE_API_KEY が未設定です（Places API画像検索に必要）")
     return warnings

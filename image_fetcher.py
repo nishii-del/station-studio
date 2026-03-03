@@ -1,5 +1,5 @@
 """
-画像取得モジュール - Wikipedia記事画像 + Google Custom Search API + Wikimediaフォールバック
+画像取得モジュール - Wikipedia記事画像 + Google Places API (New)
 """
 import io
 import json
@@ -14,13 +14,12 @@ from PIL import Image
 
 from config import (
     GOOGLE_API_KEY,
-    GOOGLE_CSE_ID,
-    WIKIMEDIA_API_URL,
+    PLACES_TEXT_SEARCH_URL,
+    PLACES_PHOTO_URL_TEMPLATE,
+    PLACES_PHOTO_MAX_WIDTH,
+    PLACES_PHOTO_CANDIDATES,
     MIN_IMAGE_WIDTH,
     IMAGES_PER_STATION,
-    IMAGE_QUERIES_BUILDING,
-    IMAGE_QUERIES_SIGN,
-    IMAGE_QUERIES_SCENERY,
     IMAGE_CACHE_DIR,
 )
 
@@ -184,10 +183,78 @@ def _download_image(url, save_path, retries=2):
     return False
 
 
+def _is_outdoor_photo(image_path):
+    """
+    画像が屋外写真かどうかを判定。
+    画像上部1/4の明るさと青/白の割合で空の有無を推定する。
+    屋内写真（改札・コンコース等）を除外するために使用。
+    """
+    try:
+        img = Image.open(image_path).convert("RGB")
+        w, h = img.size
+        # 上部1/4を分析
+        top_region = img.crop((0, 0, w, h // 4))
+        pixels = list(top_region.getdata())
+        total = len(pixels)
+        if total == 0:
+            return True
+
+        sky_count = 0
+        bright_count = 0
+        for r, g, b in pixels:
+            brightness = (r + g + b) / 3
+            # 空っぽい色: 青系 or 明るい白/グレー
+            if (b > 150 and b > r and b > g - 20) or brightness > 200:
+                sky_count += 1
+            if brightness > 120:
+                bright_count += 1
+
+        sky_ratio = sky_count / total
+        bright_ratio = bright_count / total
+
+        is_outdoor = sky_ratio > 0.3 or bright_ratio > 0.6
+        logger.debug(f"屋外判定: sky={sky_ratio:.2f} bright={bright_ratio:.2f} → {'屋外' if is_outdoor else '屋内'}")
+        return is_outdoor
+    except Exception as e:
+        logger.debug(f"屋外判定エラー: {e}")
+        return True  # エラー時は許可
+
+
+def _is_station_image_filename(filename, station_name):
+    """
+    Wikipediaの画像ファイル名が駅舎写真らしいか判定。
+    駅名・Station・Sta・駅 等を含むファイル名はOK。
+    周辺施設名のみのファイル名はNG。
+    """
+    lower = filename.lower()
+    clean_name = re.sub(r'[\(（〈\[【].+?[\)）〉\]】]', '', station_name).strip()
+
+    # 駅関連キーワードが含まれていればOK
+    station_keywords = ['station', 'sta.', 'sta-', 'sta_', 'eki', '駅']
+    if any(kw in lower for kw in station_keywords):
+        return True
+
+    # 駅名のローマ字がファイル名に含まれる場合もOK（例: Higashikanagawa）
+    # ただし station キーワードも一緒にあるべき → 上で処理済み
+
+    # 明らかに駅でない画像の除外キーワード
+    reject_keywords = [
+        'aerial', 'panorama', 'skyline', 'rise', 'tower', 'building',
+        'mitsukoshi', 'department', 'hotel', 'shrine', 'temple',
+        'map', 'diagram', 'logo', 'symbol', 'banner',
+    ]
+    if any(kw in lower for kw in reject_keywords):
+        logger.info(f"Wikipedia: 駅舎外観でない画像をスキップ: {filename}")
+        return False
+
+    # キーワードなしでも、判定不能な場合は許可（多くの駅画像はファイル名が曖昧）
+    return True
+
+
 def _wikipedia_station_image(station_name, output_dir, safe_name):
     """
     Wikipedia日本語版の駅記事からメイン画像（infobox画像）を取得。
-    駅記事のリード画像は駅舎外観写真であることが多い。
+    ファイル名で駅舎外観かどうかをフィルタリングする。
     """
     params = {
         "action": "query",
@@ -224,6 +291,11 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
             logger.debug(f"Wikipedia: SVG/GIFスキップ: {image_url}")
             continue
 
+        # ファイル名で駅舎外観写真かフィルタリング
+        img_filename = image_url.split("/")[-1]
+        if not _is_station_image_filename(img_filename, station_name):
+            continue
+
         ext = ".png" if ".png" in lower_url else ".jpg"
         filename = f"{safe_name}_1{ext}"
         save_path = os.path.join(output_dir, filename)
@@ -232,109 +304,134 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
             logger.info(f"Wikipedia記事画像取得成功: {station_name}駅")
             return [save_path]
 
-    logger.info(f"Wikipedia記事画像なし: {station_name}駅")
+    logger.info(f"Wikipedia記事画像なし（外観写真なし）: {station_name}駅")
     return []
 
 
-def _is_relevant_result(item, station_name):
-    """検索結果が駅に関連しているか判定"""
-    import re
-    title = item.get("title", "")
-    snippet = item.get("snippet", "")
-    context = item.get("image", {}).get("contextLink", "")
-    text = f"{title} {snippet} {context}"
+def _places_search_station(station_name):
+    """
+    Google Places API (New) Text Search で駅を検索し、写真リファレンスを取得。
 
-    # カッコ除去した駅名でもチェック
-    clean_name = re.sub(r'[\(（〈\[【].+?[\)）〉\]】]', '', station_name).strip()
-    names_to_check = {station_name, clean_name, f"{station_name}駅", f"{clean_name}駅"}
-
-    # 駅名が含まれていればOK
-    name_found = any(n in text for n in names_to_check if n)
-    if name_found:
-        return True
-
-    # 駅名がテキストにない場合は不採用（汎用キーワードだけでは通さない）
-    return False
-
-
-def _google_search_once(query, station_name, output_dir, max_images):
-    """Google Custom Search APIで1クエリ分を検索・保存"""
-    params = {
-        "key": GOOGLE_API_KEY,
-        "cx": GOOGLE_CSE_ID,
-        "q": query,
-        "searchType": "image",
-        "imgType": "photo",
-        "lr": "lang_ja",
-        "num": 10,
+    Returns:
+        list[dict]: 写真メタデータのリスト。各要素は
+            {"name": "places/.../photos/...", "widthPx": int, "heightPx": int}
+    """
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": GOOGLE_API_KEY,
+        "X-Goog-FieldMask": "places.photos",
+    }
+    body = {
+        "textQuery": f"{station_name}駅",
+        "languageCode": "ja",
+        "maxResultCount": 1,
     }
 
     try:
-        resp = requests.get(
-            "https://www.googleapis.com/customsearch/v1",
-            params=params,
+        resp = requests.post(
+            PLACES_TEXT_SEARCH_URL,
+            json=body,
+            headers=headers,
             timeout=30,
         )
         resp.raise_for_status()
-        results = resp.json()
+        data = resp.json()
     except requests.RequestException as e:
-        logger.error(f"Google検索APIエラー: {e}")
+        logger.error(f"Places Text Search APIエラー: {e}")
         return []
 
-    items = results.get("items", [])
-    if not items:
+    places = data.get("places", [])
+    if not places:
+        logger.info(f"Places API: 駅が見つかりません: {station_name}")
         return []
 
-    saved_paths = []
-    safe_name = _sanitize_filename(station_name)
-
-    for i, item in enumerate(items):
-        if len(saved_paths) >= max_images:
-            break
-
-        # 関連性チェック: 駅名がタイトル/スニペットに含まれない画像はスキップ
-        if not _is_relevant_result(item, station_name):
-            logger.debug(f"関連性低: {item.get('title', '')}")
-            continue
-
-        # サイズチェック: アイコン/ロゴ等の小さい画像やアスペクト比が極端な画像を除外
-        img_meta = item.get("image", {})
-        img_w = int(img_meta.get("width", 0))
-        img_h = int(img_meta.get("height", 0))
-        if img_w > 0 and img_h > 0:
-            aspect = max(img_w, img_h) / min(img_w, img_h) if min(img_w, img_h) > 0 else 99
-            # 正方形すぎる画像（アイコン/ロゴ）かつ小さい → スキップ
-            if img_w < 500 and img_h < 500 and aspect < 1.3:
-                logger.debug(f"アイコン除外 ({img_w}x{img_h}): {item.get('title', '')}")
-                continue
-            # 極端に小さい画像はスキップ
-            if max(img_w, img_h) < 300:
-                logger.debug(f"小画像除外 ({img_w}x{img_h}): {item.get('title', '')}")
-                continue
-
-        image_url = item.get("link", "")
-        if not image_url:
-            continue
-
-        ext = ".jpg"
-        if ".png" in image_url.lower():
-            ext = ".png"
-
-        filename = f"{safe_name}_{len(saved_paths) + 1}{ext}"
-        save_path = os.path.join(output_dir, filename)
-
-        if _download_image(image_url, save_path):
-            saved_paths.append(save_path)
-
-        time.sleep(REQUEST_DELAY)
-
-    return saved_paths
+    photos = places[0].get("photos", [])
+    logger.info(f"Places API: {station_name}駅 → {len(photos)}枚の写真候補")
+    return photos[:PLACES_PHOTO_CANDIDATES]
 
 
-def search_google_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
+def _score_places_photo(photo_meta, rank):
     """
-    Google Custom Search APIで駅画像を取得（1枚）
-    駅建物 → 駅名標 → 風景 の優先順でクエリを試行
+    写真メタデータにスコアを付ける。横長・高解像度・上位を優先。
+
+    Args:
+        photo_meta: {"widthPx": int, "heightPx": int, ...}
+        rank: Google推薦順位 (0始まり)
+
+    Returns:
+        int: スコア（高いほど良い）
+    """
+    score = 0
+    w = photo_meta.get("widthPx", 0)
+    h = photo_meta.get("heightPx", 0)
+
+    # アスペクト比スコア
+    if h > 0:
+        aspect = w / h
+        if 1.2 <= aspect <= 2.5:
+            score += 30   # 横長（駅舎外観に多い）
+        elif 1.0 <= aspect < 1.2:
+            score += 10   # ほぼ正方形
+        else:
+            score -= 10   # 縦長
+
+    # 解像度スコア
+    if w >= 1200:
+        score += 15
+    elif w >= 800:
+        score += 10
+
+    # Google推薦順位スコア（上位ほど高い）
+    rank_bonus = max(0, 20 - rank * 5)
+    score += rank_bonus
+
+    return score
+
+
+def _download_places_photo(photo_name, save_path):
+    """
+    Places API (New) から写真をダウンロードして保存。
+
+    Args:
+        photo_name: 写真リソース名 (e.g. "places/.../photos/...")
+        save_path: 保存先パス
+
+    Returns:
+        bool: 成功したらTrue
+    """
+    url = PLACES_PHOTO_URL_TEMPLATE.format(photo_name=photo_name)
+    params = {
+        "maxWidthPx": PLACES_PHOTO_MAX_WIDTH,
+        "key": GOOGLE_API_KEY,
+    }
+
+    try:
+        resp = requests.get(url, params=params, timeout=30)
+        resp.raise_for_status()
+
+        content_type = resp.headers.get("Content-Type", "")
+        if "image" not in content_type:
+            logger.debug(f"Places Photo: 画像でないコンテンツ: {content_type}")
+            return False
+
+        image_data = resp.content
+        if not _validate_image_size(image_data):
+            return False
+
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        with open(save_path, "wb") as f:
+            f.write(image_data)
+        logger.info(f"Places Photo 保存: {save_path}")
+        return True
+    except requests.RequestException as e:
+        logger.debug(f"Places Photo ダウンロード失敗: {e}")
+        return False
+
+
+def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
+    """
+    Google Places API (New) で駅画像を取得。
+    写真候補をスコアリングして最適な写真を選択。
 
     Args:
         station_name: 駅名
@@ -345,122 +442,75 @@ def search_google_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         list[str]: 保存された画像パスのリスト
     """
     if GOOGLE_API_KEY == "YOUR_GOOGLE_API_KEY_HERE":
-        logger.warning("Google API キーが未設定です。Wikimediaにフォールバックします。")
-        return search_wikimedia_images(station_name, output_dir, max_images)
-
-    import re
-    clean_name = re.sub(r'[\(（〈\[【].+?[\)）〉\]】]', '', station_name).strip()
-    has_bracket = clean_name != station_name and clean_name
-
-    # 検索名リスト: カッコ付き駅はフルネームを先に試す
-    # 例: "明治神宮前〈原宿〉" → ["明治神宮前〈原宿〉", "明治神宮前"]
-    search_names = [station_name]
-    if has_bracket:
-        search_names = [station_name, clean_name]
-
-    all_queries = IMAGE_QUERIES_BUILDING + IMAGE_QUERIES_SIGN + IMAGE_QUERIES_SCENERY
-    for sname in search_names:
-        # 関連性チェック用の名前（カッコ除去版）
-        relevance_name = clean_name if has_bracket else sname
-        for i, query_tmpl in enumerate(all_queries):
-            query = query_tmpl.format(station_name=sname)
-            logger.info(f"Google画像検索（{i+1}/{len(all_queries)}）: {query}")
-            paths = _google_search_once(query, relevance_name, output_dir, max_images)
-            if paths:
-                return paths
-
-    # Wikimedia フォールバック
-    fb_name = clean_name if has_bracket else station_name
-    logger.info(f"Google検索結果なし。Wikimediaにフォールバック: {fb_name}")
-    return search_wikimedia_images(fb_name, output_dir, max_images)
-
-
-def _wikimedia_search(query, max_images, output_dir, safe_name, start_idx=0):
-    """Wikimedia Commons APIで1クエリ分の画像検索・保存"""
-    params = {
-        "action": "query",
-        "format": "json",
-        "generator": "search",
-        "gsrnamespace": "6",
-        "gsrsearch": query,
-        "gsrlimit": 10,
-        "prop": "imageinfo",
-        "iiprop": "url|size|mime",
-    }
-
-    try:
-        resp = requests.get(WIKIMEDIA_API_URL, params=params, headers=_HEADERS, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException as e:
-        logger.error(f"Wikimedia APIエラー: {e}")
+        logger.warning("Google API キーが未設定です。Places APIをスキップします。")
         return []
 
-    pages = data.get("query", {}).get("pages", {})
-    if not pages:
+    photos = _places_search_station(station_name)
+    if not photos:
         return []
 
+    # スコアリングでソート（高スコア順）
+    scored = [(photo, _score_places_photo(photo, i)) for i, photo in enumerate(photos)]
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    safe_name = _sanitize_filename(station_name)
     saved_paths = []
-    for page_id, page in pages.items():
-        if len(saved_paths) >= max_images:
-            break
 
-        imageinfo = page.get("imageinfo", [{}])
-        if not imageinfo:
-            continue
-        info = imageinfo[0]
+    # 候補をダウンロードして屋外判定し、最良の1枚を選ぶ
+    best_path = None
+    best_score = -999
+    temp_idx = 0
 
-        width = info.get("width", 0)
-        if width < MIN_IMAGE_WIDTH:
-            continue
+    for photo, meta_score in scored:
+        if best_path and best_score > 50:
+            break  # 十分良い写真が見つかった
 
-        mime = info.get("mime", "")
-        if mime not in ("image/jpeg", "image/png"):
+        photo_name = photo.get("name", "")
+        if not photo_name:
             continue
 
-        image_url = info.get("url", "")
-        if not image_url:
-            continue
-
-        ext = ".jpg" if "jpeg" in mime else ".png"
-        filename = f"{safe_name}_{start_idx + len(saved_paths) + 1}{ext}"
+        temp_idx += 1
+        filename = f"{safe_name}_tmp_{temp_idx}.jpg"
         save_path = os.path.join(output_dir, filename)
 
-        if _download_image(image_url, save_path):
-            saved_paths.append(save_path)
+        if not _download_places_photo(photo_name, save_path):
+            continue
+
+        # 屋外判定でスコア補正
+        outdoor = _is_outdoor_photo(save_path)
+        final_score = meta_score + (40 if outdoor else -30)
+        logger.debug(f"Places Photo スコア={meta_score}→{final_score} ({'屋外' if outdoor else '屋内'}): {photo_name}")
+
+        if final_score > best_score:
+            # 前の候補を削除
+            if best_path and os.path.exists(best_path):
+                os.remove(best_path)
+            best_path = save_path
+            best_score = final_score
+        else:
+            os.remove(save_path)
 
         time.sleep(REQUEST_DELAY)
 
-    return saved_paths
-
-
-def search_wikimedia_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
-    """
-    Wikimedia Commons APIで駅画像を検索・保存（フォールバック）
-    日本語名 → 「駅名 station」の順でフォールバック検索
-    """
-    safe_name = _sanitize_filename(station_name)
-
-    # 1. 「駅名+駅」で検索
-    queries = [f"{station_name}駅", f"{station_name} station", station_name]
     saved_paths = []
+    if best_path:
+        # 最終ファイル名にリネーム
+        final_path = os.path.join(output_dir, f"{safe_name}_1.jpg")
+        if best_path != final_path:
+            os.rename(best_path, final_path)
+        saved_paths.append(final_path)
 
-    for query in queries:
-        if len(saved_paths) >= max_images:
-            break
-        logger.info(f"Wikimedia画像検索: {query}")
-        remaining = max_images - len(saved_paths)
-        paths = _wikimedia_search(query, remaining, output_dir, safe_name, len(saved_paths))
-        saved_paths.extend(paths)
-
-    logger.info(f"Wikimedia: {station_name} → {len(saved_paths)}枚取得")
+    logger.info(f"Places API: {station_name} → {len(saved_paths)}枚取得 (スコア={best_score})")
     return saved_paths
 
 
 def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
     """
     駅画像を取得するメインエントリポイント
-    Google Custom Search → Wikipedia記事画像 → Wikimedia の順で試行
+
+    フォールバック順序（商用利用OKのソースのみ）:
+      1. Wikipedia記事画像（無料・CC BY-SA）
+      2. Google Places API New（商用OK・スコアリングで外観優先）
 
     Args:
         station_name: 駅名
@@ -472,17 +522,17 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     """
     safe_name = _sanitize_filename(station_name)
 
-    # 1. Google Custom Search（高品質・最新の写真が多い）
-    if GOOGLE_API_KEY != "YOUR_GOOGLE_API_KEY_HERE":
-        paths = search_google_images(station_name, output_dir, max_images)
-        if paths:
-            return paths
-
-    # 2. Wikipedia記事のメイン画像
+    # 1. Wikipedia記事のメイン画像（無料・駅舎外観が多い）
     logger.info(f"Wikipedia記事画像を検索: {station_name}駅")
     paths = _wikipedia_station_image(station_name, output_dir, safe_name)
     if paths:
         return paths
 
-    # 3. Wikimedia Commons
-    return search_wikimedia_images(station_name, output_dir, max_images)
+    # 2. Google Places API (New)（商用利用OK）
+    logger.info(f"Places APIで画像検索: {station_name}駅")
+    paths = search_places_images(station_name, output_dir, max_images)
+    if paths:
+        return paths
+
+    logger.info(f"画像取得失敗: {station_name}駅（Wikipedia・Places API ともに取得できず）")
+    return []
