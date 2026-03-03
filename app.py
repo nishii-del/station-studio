@@ -527,10 +527,13 @@ with st.sidebar:
     st.caption("接続状況")
     warnings = validate_keys()
     google_ok = "GOOGLE_API_KEY" not in " ".join(warnings)
-    st.markdown("<span translate='no'>Overpass</span> — <span style='color:#64748B;font-weight:600;'>接続中</span> <span style='color:#aaa;font-size:0.8em;'>駅情報</span>", unsafe_allow_html=True)
-    st.markdown("<span translate='no'>Wikipedia</span> — <span style='color:#64748B;font-weight:600;'>接続中</span> <span style='color:#aaa;font-size:0.8em;'>写真</span>", unsafe_allow_html=True)
-    gstatus = "<span style='color:#64748B;font-weight:600;'>接続中</span>" if google_ok else "<span style='color:#aaa;'>未設定</span>"
-    st.markdown(f"<span translate='no'>Google Cloud</span> — {gstatus} <span style='color:#aaa;font-size:0.8em;'>写真</span>", unsafe_allow_html=True)
+    gcolor = "#64748B" if google_ok else "#aaa"
+    gtext = "接続中" if google_ok else "未設定"
+    st.markdown(f"""<div translate="no" style="font-size:0.9rem;line-height:2;">
+<b>Overpass</b> <span style="color:#64748B;">接続中</span> <span style="color:#aaa;font-size:0.8em;">駅情報</span><br>
+<b>Wikipedia</b> <span style="color:#64748B;">接続中</span> <span style="color:#aaa;font-size:0.8em;">写真</span><br>
+<b>Google Cloud</b> <span style="color:{gcolor};">{gtext}</span> <span style="color:#aaa;font-size:0.8em;">写真</span>
+</div>""", unsafe_allow_html=True)
 
     st.markdown("---")
     lib_count = 0
