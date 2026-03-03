@@ -184,14 +184,18 @@ if not st.session_state.get("authenticated", False):
     st.stop()
 
 
-st.markdown("""
-<meta name="google" content="notranslate">
-<meta http-equiv="Content-Language" content="ja">
-<script>document.documentElement.lang = 'ja'; document.documentElement.translate = false; document.documentElement.classList.add('notranslate');</script>
-""", unsafe_allow_html=True)
+st.markdown('<meta name="google" content="notranslate"><meta http-equiv="Content-Language" content="ja">', unsafe_allow_html=True)
+import streamlit.components.v1 as _components
+_components.html("""<script>
+var d = window.parent.document;
+d.documentElement.lang = 'ja';
+d.documentElement.translate = false;
+d.documentElement.classList.add('notranslate');
+</script>""", height=0)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap');
+    html { translate: no !important; }
     h1,h2,h3,h4,p,span,div,label {
         font-family: 'Noto Sans JP', sans-serif !important;
     }
@@ -200,8 +204,7 @@ st.markdown("""
     [data-testid="stLocaleDialog"],
     [data-testid="stAppLocaleDialog"],
     div[role="dialog"][aria-label*="language"],
-    div[role="dialog"][aria-label*="言語"],
-    /* 言語選択ダイアログ非表示 */
+    div[role="dialog"][aria-label*="言語"] { display: none !important; }
     [data-testid="stSidebar"] { background: #fafafa !important; }
     .stImage img { border-radius: 8px !important; }
     [data-testid="collapsedControl"] { display: none !important; }
@@ -244,17 +247,21 @@ st.markdown("""
     .num-card .num { font-size: 1.5rem; font-weight: 700; color: #475569; }
     .num-card .num-label { font-size: 0.7rem; color: #999; margin-top: 0.1rem; white-space: nowrap; }
     .stn-card {
-        background: #fff; border: 1px solid #eee; border-radius: 10px;
+        background: #fff !important; border: 1px solid #eee; border-radius: 10px;
         padding: 1rem; margin-bottom: 0.6rem;
     }
-    .stn-card .stn-name { font-size: 1.1rem; font-weight: 700; color: #1a1a1a; margin-bottom: 0.3rem; }
+    .stn-card .stn-name {
+        font-size: 1.1rem !important; font-weight: 700 !important;
+        color: #1a1a1a !important; margin-bottom: 0.3rem;
+        display: block !important;
+    }
     .stn-card .stn-badge {
-        display: inline-block; font-size: 0.65rem; font-weight: 500;
-        color: #475569; background: #f0f2f5; padding: 0.1rem 0.45rem;
+        display: inline-block !important; font-size: 0.65rem !important; font-weight: 500 !important;
+        color: #475569 !important; background: #f0f2f5 !important; padding: 0.1rem 0.45rem;
         border-radius: 4px;
     }
     .stn-card .stn-badge.cached {
-        color: #2563eb; background: #eff6ff;
+        color: #2563eb !important; background: #eff6ff !important;
     }
     /* マルチセレクト: タグ名を省略せず全文表示 */
     [data-testid="stMultiSelect"] [data-baseweb="tag"] {
