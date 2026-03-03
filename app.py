@@ -238,11 +238,11 @@ st.markdown("""
         border-bottom: 1px solid #eee;
     }
     .num-card {
-        background: linear-gradient(135deg, #f6f8fa, #edf1f5); border-radius: 10px; padding: 1.2rem;
-        border: 1px solid #dce1e8;
+        background: linear-gradient(135deg, #f6f8fa, #edf1f5); border-radius: 10px; padding: 0.8rem 1rem;
+        border: 1px solid #dce1e8; text-align: center;
     }
-    .num-card .num { font-size: 2rem; font-weight: 700; color: #475569; }
-    .num-card .num-label { font-size: 0.72rem; color: #999; margin-top: 0.15rem; }
+    .num-card .num { font-size: 1.5rem; font-weight: 700; color: #475569; }
+    .num-card .num-label { font-size: 0.7rem; color: #999; margin-top: 0.1rem; white-space: nowrap; }
     .st-card {
         background: #fff; border: 1px solid #eee; border-radius: 10px;
         padding: 1rem; margin-bottom: 0.6rem;
@@ -810,9 +810,9 @@ if page == "検索":
             with c2:
                 st.markdown(f'<div class="num-card"><div class="num">{display_count}</div><div class="num-label">表示駅数</div></div>', unsafe_allow_html=True)
             with c3:
-                st.markdown(f'<div class="num-card"><div class="num">{with_images}</div><div class="num-label">画像取得済み</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="num-card"><div class="num">{with_images}</div><div class="num-label">画像取得済</div></div>', unsafe_allow_html=True)
             with c4:
-                st.markdown(f'<div class="num-card"><div class="num">{total_images}</div><div class="num-label">画像総数</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="num-card"><div class="num">{total_images}</div><div class="num-label">画像数</div></div>', unsafe_allow_html=True)
 
         # pydeckマップ
         if mode_key == "city":
