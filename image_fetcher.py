@@ -186,12 +186,17 @@ def _download_image(url, save_path, retries=2):
 def _is_outdoor_photo(image_path):
     """
     画像が屋外写真かどうかを判定。
-    画像上部1/4の明るさと青/白の割合で空の有無を推定する。
-    屋内写真（改札・コンコース等）を除外するために使用。
+    画像上部1/4に「青い空」ピクセルがあるかで判定。
+    蛍光灯の白い光（室内）を空と誤判定しないよう、青色優位のピクセルのみカウント。
     """
     try:
         img = Image.open(image_path).convert("RGB")
         w, h = img.size
+        # 大きい画像はリサイズして高速化
+        if w > 800:
+            ratio = 800 / w
+            img = img.resize((800, int(h * ratio)))
+            w, h = img.size
         # 上部1/4を分析
         top_region = img.crop((0, 0, w, h // 4))
         pixels = list(top_region.getdata())
@@ -199,25 +204,77 @@ def _is_outdoor_photo(image_path):
         if total == 0:
             return True
 
-        sky_count = 0
-        bright_count = 0
+        blue_sky = 0
+        white_sky = 0
         for r, g, b in pixels:
-            brightness = (r + g + b) / 3
-            # 空っぽい色: 青系 or 明るい白/グレー
-            if (b > 150 and b > r and b > g - 20) or brightness > 200:
-                sky_count += 1
-            if brightness > 120:
-                bright_count += 1
+            # 青空: 青が赤・緑より明確に高い（暗い青空も検出）
+            if b > 80 and b > r + 20 and b > g:
+                blue_sky += 1
+            # 白い空/曇り空: 全体的に非常に明るく均一
+            elif r > 210 and g > 210 and b > 210:
+                white_sky += 1
 
-        sky_ratio = sky_count / total
-        bright_ratio = bright_count / total
+        blue_ratio = blue_sky / total
+        white_ratio = white_sky / total
+        sky_ratio = blue_ratio + white_ratio * 0.5
 
-        is_outdoor = sky_ratio > 0.3 or bright_ratio > 0.6
-        logger.debug(f"屋外判定: sky={sky_ratio:.2f} bright={bright_ratio:.2f} → {'屋外' if is_outdoor else '屋内'}")
+        is_outdoor = sky_ratio > 0.05
+        logger.debug(f"屋外判定: blue={blue_ratio:.2f} white={white_ratio:.2f} sky={sky_ratio:.2f} → {'屋外' if is_outdoor else '屋内'}")
         return is_outdoor
     except Exception as e:
         logger.debug(f"屋外判定エラー: {e}")
         return True  # エラー時は許可
+
+
+def _is_aerial_photo(image_path):
+    """
+    空撮・俯瞰写真かどうかを判定。
+    地上写真: 下部は道路・地面（暗め、低コントラスト）
+    空撮写真: 下部にも建物の屋根や線路が密集（高コントラスト + 構造物の色）
+    """
+    try:
+        img = Image.open(image_path).convert("RGB")
+        w, h = img.size
+        if w < 200 or h < 200:
+            return False
+        # リサイズして高速化
+        if w > 600:
+            ratio = 600 / w
+            img = img.resize((600, int(h * ratio)))
+            w, h = img.size
+
+        # 中央1/3の分析（空撮なら建物屋根が見える、地上なら建物の壁面）
+        mid = img.crop((0, h // 3, w, h * 2 // 3))
+        mid_pixels = list(mid.getdata())
+        mid_total = len(mid_pixels)
+
+        # 中央部に空（青）が含まれているか → 空撮は俯瞰なので中央に空はない
+        # 地上写真の場合、中央は建物壁面（グレー/茶系）
+        # 空撮の場合、中央は建物屋根（グレー系）+ 線路（細い線）
+
+        # グレー系屋根ピクセル（R≒G≒B、暗め）の割合
+        roof_count = 0
+        for r, g, b in mid_pixels:
+            diff = max(r, g, b) - min(r, g, b)
+            brightness = (r + g + b) / 3
+            if diff < 30 and 60 < brightness < 180:
+                roof_count += 1
+        roof_ratio = roof_count / mid_total
+
+        # 下部1/4に道路/地面があるか（地上写真の特徴）
+        bottom = img.crop((0, h * 3 // 4, w, h))
+        bottom_pixels = list(bottom.getdata())
+        bottom_total = len(bottom_pixels)
+        dark_ground = sum(1 for r, g, b in bottom_pixels if (r + g + b) / 3 < 100)
+        ground_ratio = dark_ground / bottom_total
+
+        # 空撮: 中央にグレー屋根が非常に多い
+        is_aerial = roof_ratio > 0.4
+        logger.debug(f"空撮判定: roof={roof_ratio:.2f} ground={ground_ratio:.2f} → {'空撮' if is_aerial else '地上'}")
+        return is_aerial
+    except Exception as e:
+        logger.debug(f"空撮判定エラー: {e}")
+        return False
 
 
 def _is_station_image_filename(filename, station_name):
@@ -301,6 +358,15 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
         save_path = os.path.join(output_dir, filename)
 
         if _download_image(image_url, save_path):
+            # 屋外判定 + 空撮判定
+            if not _is_outdoor_photo(save_path):
+                logger.info(f"Wikipedia: 屋内写真のためスキップ: {station_name}駅")
+                os.remove(save_path)
+                continue
+            if _is_aerial_photo(save_path):
+                logger.info(f"Wikipedia: 空撮写真のためスキップ: {station_name}駅")
+                os.remove(save_path)
+                continue
             logger.info(f"Wikipedia記事画像取得成功: {station_name}駅")
             return [save_path]
 
