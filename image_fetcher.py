@@ -345,7 +345,7 @@ def _is_train_or_platform_photo(image_path):
             return False
 
         uniform_ratio = uniform_rows / total_rows
-        if uniform_ratio > 0.35:
+        if uniform_ratio > 0.55:
             logger.debug(f"電車判定: uniform={uniform_ratio:.2f} → 電車(均一帯)")
             return True
 
@@ -365,37 +365,7 @@ def _is_train_or_platform_photo(image_path):
             logger.debug(f"電車判定: dark_bt={dark_bottom:.2f} yellow={yellow_rows}rows → ホーム(線路+黄線)")
             return True
 
-        # Check 3: 金属ステンレス車体検出（中央にグレー均一帯が広がる）
-        mid_region = img.crop((0, h // 4, w, h * 3 // 4))
-        mid_pixels = list(mid_region.getdata())
-        metallic = 0
-        for r, g, b in mid_pixels:
-            diff = max(r, g, b) - min(r, g, b)
-            brightness = (r + g + b) / 3
-            # ステンレス: 彩度低い + 中間明度
-            if diff < 20 and 120 < brightness < 210:
-                metallic += 1
-        metallic_ratio = metallic / len(mid_pixels) if mid_pixels else 0
-        if metallic_ratio > 0.4:
-            logger.debug(f"電車判定: metallic={metallic_ratio:.2f} → 電車(金属車体)")
-            return True
-
-        # Check 4: 画像全体にレール・架線の水平線が多い
-        # （線路の砂利 = 茶色/灰色の低明度ピクセルが画像下半分に多い）
-        lower_half = img.crop((0, h // 2, w, h))
-        lh_pixels = list(lower_half.getdata())
-        gravel = 0
-        for r, g, b in lh_pixels:
-            brightness = (r + g + b) / 3
-            diff = max(r, g, b) - min(r, g, b)
-            if 40 < brightness < 120 and diff < 30:
-                gravel += 1
-        gravel_ratio = gravel / len(lh_pixels) if lh_pixels else 0
-        if gravel_ratio > 0.5 and dark_bottom > 0.15:
-            logger.debug(f"電車判定: gravel={gravel_ratio:.2f} dark_bt={dark_bottom:.2f} → ホーム(砂利線路)")
-            return True
-
-        logger.debug(f"電車判定: uniform={uniform_ratio:.2f} metallic={metallic_ratio:.2f} gravel={gravel_ratio:.2f} → OK")
+        logger.debug(f"電車判定: uniform={uniform_ratio:.2f} dark_bt={dark_bottom:.2f} yellow={yellow_rows} → OK")
         return False
     except Exception as e:
         logger.debug(f"電車判定エラー: {e}")
