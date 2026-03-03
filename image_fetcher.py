@@ -216,7 +216,18 @@ def _is_outdoor_photo(image_path):
 
         blue_ratio = blue_sky / total
         white_ratio = white_sky / total
-        sky_ratio = blue_ratio + white_ratio * 0.5
+
+        # 青空ピクセルがある場合は白い空も加算
+        # 青空がごく少量の場合、白い天井の誤検出を防止
+        # ただし白が圧倒的に多い（>60%）場合は曇り空と判定
+        if blue_ratio >= 0.05:
+            sky_ratio = blue_ratio + white_ratio * 0.3
+        elif blue_ratio >= 0.02:
+            sky_ratio = blue_ratio + white_ratio * 0.15
+        elif white_ratio > 0.6:
+            sky_ratio = white_ratio * 0.15
+        else:
+            sky_ratio = blue_ratio
 
         is_outdoor = sky_ratio > 0.05
         logger.debug(f"屋外判定: blue={blue_ratio:.2f} white={white_ratio:.2f} sky={sky_ratio:.2f} → {'屋外' if is_outdoor else '屋内'}")
@@ -242,6 +253,20 @@ def _is_aerial_photo(image_path):
             ratio = 600 / w
             img = img.resize((600, int(h * ratio)))
             w, h = img.size
+
+        # まず上部に空があるかチェック（空撮は俯瞰なので上部に空が少ない）
+        top = img.crop((0, 0, w, h // 4))
+        top_pixels = list(top.getdata())
+        top_total = len(top_pixels)
+        sky_in_top = 0
+        for r, g, b in top_pixels:
+            if (b > 80 and b > r + 20 and b > g) or (r > 200 and g > 200 and b > 200):
+                sky_in_top += 1
+        sky_top_ratio = sky_in_top / top_total if top_total else 0
+        if sky_top_ratio > 0.3:
+            # 上部に空が多い → 地上撮影であり空撮ではない
+            logger.debug(f"空撮判定: 上部に空あり({sky_top_ratio:.2f}) → 地上撮影")
+            return False
 
         # 中央1/3の分析（空撮なら建物屋根が見える、地上なら建物の壁面）
         mid = img.crop((0, h // 3, w, h * 2 // 3))
@@ -277,100 +302,351 @@ def _is_aerial_photo(image_path):
         return False
 
 
-def _is_station_image_filename(filename, station_name):
+def _is_train_or_platform_photo(image_path):
     """
-    Wikipediaの画像ファイル名が駅舎写真らしいか判定。
-    駅名・Station・Sta・駅 等を含むファイル名はOK。
-    周辺施設名のみのファイル名はNG。
+    電車やホームの写真かどうかを判定。
+    電車: 画像中央部に水平方向に均一な色帯（車体）が多い。
+    駅舎建物は窓・ドア・看板等で色が変化するため均一帯は少ない。
     """
-    lower = filename.lower()
-    clean_name = re.sub(r'[\(（〈\[【].+?[\)）〉\]】]', '', station_name).strip()
+    try:
+        img = Image.open(image_path).convert("RGB")
+        w, h = img.size
+        if w > 800:
+            ratio = 800 / w
+            img = img.resize((800, int(h * ratio)))
+            w, h = img.size
 
-    # 駅関連キーワードが含まれていればOK
-    station_keywords = ['station', 'sta.', 'sta-', 'sta_', 'eki', '駅']
-    if any(kw in lower for kw in station_keywords):
-        return True
+        # 中央60%（上下20%を除外：空と地面）の水平均一性チェック
+        y_start = h // 5
+        y_end = h * 4 // 5
+        sample_step = max(1, w // 30)
 
-    # 駅名のローマ字がファイル名に含まれる場合もOK（例: Higashikanagawa）
-    # ただし station キーワードも一緒にあるべき → 上で処理済み
+        uniform_rows = 0
+        total_rows = 0
 
-    # 明らかに駅でない画像の除外キーワード
-    reject_keywords = [
-        'aerial', 'panorama', 'skyline', 'rise', 'tower', 'building',
-        'mitsukoshi', 'department', 'hotel', 'shrine', 'temple',
-        'map', 'diagram', 'logo', 'symbol', 'banner',
-    ]
-    if any(kw in lower for kw in reject_keywords):
-        logger.info(f"Wikipedia: 駅舎外観でない画像をスキップ: {filename}")
+        for y in range(y_start, y_end, max(1, (y_end - y_start) // 40)):
+            samples = []
+            for x in range(0, w, sample_step):
+                samples.append(img.getpixel((min(x, w - 1), y)))
+
+            if len(samples) < 5:
+                continue
+            total_rows += 1
+
+            r_vals = [p[0] for p in samples]
+            g_vals = [p[1] for p in samples]
+            b_vals = [p[2] for p in samples]
+
+            r_range = max(r_vals) - min(r_vals)
+            g_range = max(g_vals) - min(g_vals)
+            b_range = max(b_vals) - min(b_vals)
+            avg_range = (r_range + g_range + b_range) / 3
+
+            if avg_range < 35:
+                uniform_rows += 1
+
+        if total_rows == 0:
+            return False
+
+        uniform_ratio = uniform_rows / total_rows
+        if uniform_ratio > 0.55:
+            logger.debug(f"電車判定: uniform={uniform_ratio:.2f} → 電車(均一帯)")
+            return True
+
+        # Check 2: ホーム検出 - 下部に暗い線路 + 黄色い安全線
+        bottom_third = img.crop((0, h * 2 // 3, w, h))
+        bt_pixels = list(bottom_third.getdata())
+        dark_bottom = sum(1 for r, g, b in bt_pixels if (r + g + b) / 3 < 70) / len(bt_pixels)
+
+        yellow_rows = 0
+        for y in range(h // 4, h * 4 // 5, max(1, h // 25)):
+            row_samples = [img.getpixel((min(x, w - 1), y)) for x in range(0, w, sample_step)]
+            yellow = sum(1 for r, g, b in row_samples if r > 140 and g > 100 and b < 80)
+            if len(row_samples) > 0 and yellow / len(row_samples) > 0.05:
+                yellow_rows += 1
+
+        if dark_bottom > 0.25 and yellow_rows >= 1:
+            logger.debug(f"電車判定: dark_bt={dark_bottom:.2f} yellow={yellow_rows}rows → ホーム(線路+黄線)")
+            return True
+
+        logger.debug(f"電車判定: uniform={uniform_ratio:.2f} dark_bt={dark_bottom:.2f} yellow={yellow_rows} → OK")
+        return False
+    except Exception as e:
+        logger.debug(f"電車判定エラー: {e}")
         return False
 
-    # キーワードなしでも、判定不能な場合は許可（多くの駅画像はファイル名が曖昧）
-    return True
+
+def _score_image_filename(title, station_name):
+    """
+    Wikipedia画像のファイル名をスコアリング。
+    Noneを返したら完全拒否（ダウンロードしない）。
+    """
+    lower = title.lower()
+
+    # 画像ファイルのみ
+    if not any(ext in lower for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+        return None
+    if '.svg' in lower or '.gif' in lower:
+        return None
+
+    # 完全拒否キーワード（電車・ホーム・地図等）
+    reject = [
+        'platform', 'ホーム', 'track', '線路', '軌道',
+        'train', '電車', '列車', '車両', '系電車', '系気動車',
+        'series',
+        'interior', '改札', 'concourse', '構内', 'ticket', '券売',
+        'gate',
+        'map', 'diagram', 'logo', 'symbol', 'banner', 'icon', 'pictogram',
+        'route', '路線', 'linemap',
+        'aerial', 'panorama', 'skyline',
+        'hotel', 'shrine', 'temple', 'department', 'museum',
+        'ward office', 'city hall',
+        'bus_', 'バス停', 'taxi', 'buswait',
+        'familymart', 'lawson', 'seven-eleven', '7-eleven',
+        'convenience', 'コンビニ', 'starbucks', 'mcdonalds',
+        'disambig', 'commons-logo',
+    ]
+    if any(kw in lower for kw in reject):
+        return None
+
+    score = 0
+
+    # 高スコアキーワード（駅舎外観の可能性が高い）
+    prefer = [
+        ('駅舎', 50), ('ekisha', 50), ('外観', 50),
+        ('exterior', 40), ('facade', 40),
+        ('entrance', 35), ('入口', 35), ('入り口', 35),
+        ('南口', 30), ('北口', 30), ('東口', 30), ('西口', 30),
+        ('south', 25), ('north', 25), ('east', 25), ('west', 25),
+        ('exit', 25),
+    ]
+    for kw, pts in prefer:
+        if kw in lower:
+            score += pts
+
+    # building は駅関連コンテキストがある場合のみ加点
+    if 'building' in lower and ('station' in lower or 'sta' in lower or '駅' in lower):
+        score += 40
+
+    # 駅名がファイル名に含まれる → 関連性高い
+    clean_name = re.sub(r'[\(（].+?[\)）]', '', station_name).strip()
+    if clean_name in title:
+        score += 20
+
+    # "station", "sta", or "駅" in filename
+    if 'station' in lower or '駅' in title:
+        score += 10
+    elif any(p in lower for p in [' sta ', ' sta.', '-sta-', '-sta.', '-sta_', '_sta-', '_sta.']):
+        score += 8
+
+    # 周辺エリア・商店街等の写真は減点（駅そのものでない可能性）
+    area_keywords = [
+        'area', 'dori', 'street', 'avenue', 'shopping', 'around', 'near',
+        'bus terminal', 'bus center', 'busrotary', '商店', '通り', '周辺',
+    ]
+    for kw in area_keywords:
+        if kw in lower:
+            score -= 20
+            break
+
+    return score
 
 
-def _wikipedia_station_image(station_name, output_dir, safe_name):
+def _get_wikipedia_image_urls(file_titles):
+    """Wikipedia画像タイトルのリストからURLを一括取得"""
+    if not file_titles:
+        return {}
+
+    results = {}
+    for i in range(0, len(file_titles), 50):
+        batch = file_titles[i:i + 50]
+        params = {
+            "action": "query",
+            "format": "json",
+            "titles": "|".join(batch),
+            "prop": "imageinfo",
+            "iiprop": "url",
+        }
+        try:
+            resp = requests.get(
+                "https://ja.wikipedia.org/w/api.php",
+                params=params, headers=_HEADERS, timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            pages = data.get("query", {}).get("pages", {})
+            for page_id, page in pages.items():
+                title = page.get("title", "")
+                imageinfo = page.get("imageinfo", [])
+                if imageinfo:
+                    url = imageinfo[0].get("url", "")
+                    if url:
+                        results[title] = url
+        except requests.RequestException as e:
+            logger.debug(f"Wikipedia imageinfo APIエラー: {e}")
+    return results
+
+
+def _wikipedia_find_station_page(station_name):
     """
-    Wikipedia日本語版の駅記事からメイン画像（infobox画像）を取得。
-    ファイル名で駅舎外観かどうかをフィルタリングする。
+    Wikipedia日本語版で駅記事のページタイトルを特定。
+    曖昧さ回避ページの場合、リンクから正しいページを探す。
     """
+    base_title = f"{station_name}駅"
+
+    # まず基本タイトルで画像一覧を取得
     params = {
         "action": "query",
         "format": "json",
-        "titles": f"{station_name}駅",
-        "prop": "pageimages",
-        "piprop": "original",
+        "titles": base_title,
+        "prop": "images|links",
+        "imlimit": "50",
+        "pllimit": "50",
     }
     try:
         resp = requests.get(
             "https://ja.wikipedia.org/w/api.php",
-            params=params,
-            headers=_HEADERS,
-            timeout=30,
+            params=params, headers=_HEADERS, timeout=30,
         )
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
         logger.error(f"Wikipedia APIエラー: {e}")
-        return []
+        return base_title, []
 
     pages = data.get("query", {}).get("pages", {})
     for page_id, page in pages.items():
         if page_id == "-1":
-            continue
-        original = page.get("original", {})
-        image_url = original.get("source", "")
+            return base_title, []
+
+        images = page.get("images", [])
+        image_titles = [img.get("title", "") for img in images if img.get("title", "")]
+
+        # 画像が3枚以上あれば通常の記事ページ
+        real_images = [t for t in image_titles
+                       if not any(kw in t.lower() for kw in ['disambig', 'commons-logo', '.svg'])]
+        if len(real_images) >= 2:
+            return base_title, image_titles
+
+        # 画像が少ない → 曖昧さ回避の可能性 → リンクから駅記事を探す
+        logger.info(f"Wikipedia: {base_title} は曖昧さ回避の可能性、リンクを確認")
+        links = page.get("links", [])
+        candidates = []
+        for link in links:
+            link_title = link.get("title", "")
+            if link_title.startswith(f"{station_name}駅") and "(" in link_title:
+                candidates.append(link_title)
+
+        if candidates:
+            # 全候補の画像を一括取得し、最も画像が多いページを選択
+            sub_params = {
+                "action": "query",
+                "format": "json",
+                "titles": "|".join(candidates[:5]),
+                "prop": "images",
+                "imlimit": "50",
+            }
+            try:
+                sub_resp = requests.get(
+                    "https://ja.wikipedia.org/w/api.php",
+                    params=sub_params, headers=_HEADERS, timeout=30,
+                )
+                sub_resp.raise_for_status()
+                sub_data = sub_resp.json()
+                sub_pages = sub_data.get("query", {}).get("pages", {})
+
+                best_title = None
+                best_images = []
+                for sub_pid, sub_page in sub_pages.items():
+                    if sub_pid == "-1":
+                        continue
+                    sub_title = sub_page.get("title", "")
+                    sub_imgs = [img.get("title", "") for img in sub_page.get("images", [])
+                                if img.get("title", "")]
+                    if len(sub_imgs) > len(best_images):
+                        best_title = sub_title
+                        best_images = sub_imgs
+
+                if best_title:
+                    logger.info(f"Wikipedia: 曖昧さ回避 → {best_title} ({len(best_images)}画像)")
+                    return best_title, best_images
+            except requests.RequestException:
+                pass
+
+    return base_title, []
+
+
+def _wikipedia_station_image(station_name, output_dir, safe_name):
+    """
+    Wikipedia日本語版の駅記事から駅舎外観写真を取得。
+    記事内の全画像をファイル名でスコアリングし、最適な1枚を選択。
+    曖昧さ回避ページにも対応。
+    """
+    # Step 1: 駅記事ページの特定と全画像ファイル名を取得
+    page_title, all_images = _wikipedia_find_station_page(station_name)
+    image_titles = [t for t in all_images if t]
+
+    if not image_titles:
+        logger.info(f"Wikipedia: 画像なし: {station_name}駅")
+        return []
+
+    # Step 2: ファイル名でスコアリング
+    scored_images = []
+    for title in image_titles:
+        score = _score_image_filename(title, station_name)
+        if score is not None:
+            scored_images.append((title, score))
+
+    if not scored_images:
+        logger.info(f"Wikipedia: 適切な画像候補なし: {station_name}駅")
+        return []
+
+    scored_images.sort(key=lambda x: x[1], reverse=True)
+    logger.info(f"Wikipedia: {station_name}駅 上位候補: {[(t.split(':')[-1][:30], s) for t, s in scored_images[:5]]}")
+
+    # Step 3: 上位候補のURLを一括取得
+    top_titles = [t for t, s in scored_images[:8]]
+    url_map = _get_wikipedia_image_urls(top_titles)
+
+    # Step 4: スコア順にダウンロード・品質チェック（スコア>0のみ）
+    for title, filename_score in scored_images[:8]:
+        if filename_score <= 0:
+            logger.info(f"Wikipedia: 残り候補は低スコア(≤0)、Places APIにフォールバック")
+            break
+        image_url = url_map.get(title, "")
         if not image_url:
             continue
 
-        # SVG/GIFを除外
         lower_url = image_url.lower()
-        if ".svg" in lower_url or ".gif" in lower_url:
-            logger.debug(f"Wikipedia: SVG/GIFスキップ: {image_url}")
-            continue
-
-        # ファイル名で駅舎外観写真かフィルタリング
-        img_filename = image_url.split("/")[-1]
-        if not _is_station_image_filename(img_filename, station_name):
+        if '.svg' in lower_url or '.gif' in lower_url:
             continue
 
         ext = ".png" if ".png" in lower_url else ".jpg"
-        filename = f"{safe_name}_1{ext}"
-        save_path = os.path.join(output_dir, filename)
+        save_path = os.path.join(output_dir, f"{safe_name}_1{ext}")
 
         if _download_image(image_url, save_path):
-            # 屋外判定 + 空撮判定
+            # 屋外判定
             if not _is_outdoor_photo(save_path):
-                logger.info(f"Wikipedia: 屋内写真のためスキップ: {station_name}駅")
+                logger.info(f"Wikipedia: 屋内写真スキップ: {title}")
                 os.remove(save_path)
                 continue
+            # 空撮判定
             if _is_aerial_photo(save_path):
-                logger.info(f"Wikipedia: 空撮写真のためスキップ: {station_name}駅")
+                logger.info(f"Wikipedia: 空撮写真スキップ: {title}")
                 os.remove(save_path)
                 continue
-            logger.info(f"Wikipedia記事画像取得成功: {station_name}駅")
+            # 電車/ホーム判定
+            if _is_train_or_platform_photo(save_path):
+                logger.info(f"Wikipedia: 電車/ホーム写真スキップ: {title}")
+                os.remove(save_path)
+                continue
+
+            logger.info(f"Wikipedia: 駅舎外観取得成功: {station_name}駅 ({title})")
             return [save_path]
 
-    logger.info(f"Wikipedia記事画像なし（外観写真なし）: {station_name}駅")
+        time.sleep(REQUEST_DELAY)
+
+    logger.info(f"Wikipedia: 駅舎外観写真なし: {station_name}駅")
     return []
 
 
@@ -522,14 +798,15 @@ def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     safe_name = _sanitize_filename(station_name)
     saved_paths = []
 
-    # 候補をダウンロードして屋外判定し、最良の1枚を選ぶ
+    # 候補をダウンロードして品質判定し、最良の1枚を選ぶ
     best_path = None
     best_score = -999
     temp_idx = 0
+    tried = 0
 
     for photo, meta_score in scored:
-        if best_path and best_score > 50:
-            break  # 十分良い写真が見つかった
+        if best_path and best_score > 80 and tried >= 3:
+            break  # 十分良い写真が見つかり、3枚以上試した
 
         photo_name = photo.get("name", "")
         if not photo_name:
@@ -542,10 +819,16 @@ def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         if not _download_places_photo(photo_name, save_path):
             continue
 
-        # 屋外判定でスコア補正
+        tried += 1
+        # 屋外判定 + 空撮判定 + 電車/ホーム判定でスコア補正
         outdoor = _is_outdoor_photo(save_path)
-        final_score = meta_score + (40 if outdoor else -30)
-        logger.debug(f"Places Photo スコア={meta_score}→{final_score} ({'屋外' if outdoor else '屋内'}): {photo_name}")
+        aerial = _is_aerial_photo(save_path) if outdoor else False
+        train = _is_train_or_platform_photo(save_path) if outdoor else False
+        if aerial or train:
+            final_score = meta_score - 100
+        else:
+            final_score = meta_score + (40 if outdoor else -30)
+        logger.debug(f"Places Photo スコア={meta_score}→{final_score} (outdoor={outdoor} aerial={aerial} train={train}): {photo_name}")
 
         if final_score > best_score:
             # 前の候補を削除
