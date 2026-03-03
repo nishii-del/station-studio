@@ -21,9 +21,15 @@ def _sanitize_filename(name):
     return re.sub(r'[\\/:*?"<>|]', "_", name).strip()
 
 
+OVERPASS_ENDPOINTS = [
+    OVERPASS_API_URL,
+    "https://overpass.kumi.systems/api/interpreter",
+]
+
+
 def fetch_stations_in_city(prefecture, city):
     """
-    Overpass API で指定市区内の鉄道駅を取得
+    Overpass API で指定市区内の鉄道駅を取得（複数エンドポイントで試行）
 
     Args:
         prefecture: 都道府県名（例: "東京都"）
@@ -34,60 +40,9 @@ def fetch_stations_in_city(prefecture, city):
     """
     logger.info(f"Overpass APIで {prefecture}{city} の駅を検索中...")
 
-    # Overpass QL クエリ
+    # 都道府県を含めた正確なクエリ（同名市区の誤マッチ防止）
     query = f"""
-    [out:json][timeout:60];
-    area["name"="{city}"]["admin_level"~"[78]"]->.a;
-    (
-      node["railway"="station"](area.a);
-      node["railway"="halt"](area.a);
-    );
-    out body;
-    """
-
-    try:
-        resp = requests.post(
-            OVERPASS_API_URL,
-            data={"data": query},
-            timeout=90,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException as e:
-        logger.error(f"Overpass APIエラー: {e}")
-        # フォールバック: 都道府県名も含めて再検索
-        return _fetch_stations_fallback(prefecture, city)
-
-    elements = data.get("elements", [])
-    if not elements:
-        logger.info("結果なし。フォールバック検索を試行...")
-        return _fetch_stations_fallback(prefecture, city)
-
-    # 駅名を抽出（重複排除）
-    stations = []
-    seen = set()
-    for elem in elements:
-        tags = elem.get("tags", {})
-        name = tags.get("name", "")
-        if name and name not in seen:
-            # 「駅」が付いていたら除去（統一のため）
-            clean_name = name.rstrip("駅")
-            if clean_name not in seen:
-                stations.append(clean_name)
-                seen.add(clean_name)
-
-    logger.info(f"{prefecture}{city}: {len(stations)}駅 検出")
-    return stations
-
-
-def _fetch_stations_fallback(prefecture, city):
-    """
-    フォールバック: 都道府県+市区名で検索
-    """
-    logger.info(f"フォールバック検索: {prefecture} {city}")
-
-    query = f"""
-    [out:json][timeout:60];
+    [out:json][timeout:90];
     area["name"="{prefecture}"]->.pref;
     area["name"="{city}"](area.pref)->.a;
     (
@@ -97,19 +52,31 @@ def _fetch_stations_fallback(prefecture, city):
     out body;
     """
 
-    try:
-        resp = requests.post(
-            OVERPASS_API_URL,
-            data={"data": query},
-            timeout=90,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException as e:
-        logger.error(f"フォールバック検索エラー: {e}")
-        return []
+    # 複数エンドポイントで試行
+    for endpoint in OVERPASS_ENDPOINTS:
+        try:
+            resp = requests.post(
+                endpoint,
+                data={"data": query},
+                timeout=120,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            elements = data.get("elements", [])
+            if elements:
+                stations = _extract_station_names(elements)
+                logger.info(f"{prefecture}{city}: {len(stations)}駅 検出 ({endpoint})")
+                return stations
+        except requests.RequestException as e:
+            logger.warning(f"Overpass APIエラー ({endpoint}): {e}")
+            continue
 
-    elements = data.get("elements", [])
+    logger.info("Overpass API全エンドポイント失敗。bboxフォールバック...")
+    return _find_stations_by_bbox(prefecture, city)
+
+
+def _extract_station_names(elements):
+    """Overpass結果から駅名リストを抽出"""
     stations = []
     seen = set()
     for elem in elements:
@@ -120,8 +87,6 @@ def _fetch_stations_fallback(prefecture, city):
             if clean_name not in seen:
                 stations.append(clean_name)
                 seen.add(clean_name)
-
-    logger.info(f"フォールバック結果: {len(stations)}駅")
     return stations
 
 
@@ -150,6 +115,14 @@ def _find_stations_by_bbox(prefecture, city):
     bbox = results[0]["boundingbox"]  # [lat_min, lat_max, lon_min, lon_max]
     lat_min, lat_max = float(bbox[0]), float(bbox[1])
     lon_min, lon_max = float(bbox[2]), float(bbox[3])
+
+    # bboxを5%縮小して隣接市の駅が入りにくくする
+    lat_margin = (lat_max - lat_min) * 0.05
+    lon_margin = (lon_max - lon_min) * 0.05
+    lat_min += lat_margin
+    lat_max -= lat_margin
+    lon_min += lon_margin
+    lon_max -= lon_margin
 
     _, _, station_coords = fetch_rail_graph()
 
