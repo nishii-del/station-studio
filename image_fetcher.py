@@ -907,6 +907,10 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     Returns:
         list[str]: 保存された画像パスのリスト
     """
+    # 駅名の正規化（「駅」の二重付加を防止）
+    if station_name.endswith("駅"):
+        station_name = station_name[:-1]
+
     safe_name = _sanitize_filename(station_name)
 
     # 1. Wikipedia記事の画像（ファイル名スコアリング＋品質チェック）
