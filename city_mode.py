@@ -167,18 +167,42 @@ def _find_stations_by_bbox(prefecture, city):
     return stations
 
 
-def fetch_passenger_count(station_name):
-    """
-    Wikipedia日本語版から駅の乗降客数を全社合算で取得。
-    乗降人員はそのまま、乗車人員は×2して乗降換算。
+def _parse_passenger_from_wikitext(wikitext):
+    """Wikitextから乗降客数を抽出。見つからなければNone"""
+    total = 0
+    found = False
+    for label in ("乗降人員", "乗車人員"):
+        multiplier = 1 if label == "乗降人員" else 2
+        for m in re.finditer(rf"\|\s*{label}\s*=\s*(.+)", wikitext):
+            line = m.group(1)
+            pipe_pos = line.find("|")
+            if pipe_pos >= 0:
+                line = line[:pipe_pos]
+            line = re.sub(r"<ref[^>]*/>", "", line)
+            line = re.sub(r"<ref[^>]*>.*?</ref>", "", line, flags=re.DOTALL)
+            line = re.sub(r"<br\s*/?>", " ", line)
+            line = line.replace("'''", "")
+            line = re.sub(r"（[^）]*）", " ", line)
+            line = re.sub(r"\{\{[^}]*\}\}", "", line)
+            numbers = re.findall(r"([\d,]+)\s*人", line)
+            if numbers:
+                for n in numbers:
+                    v = int(n.replace(",", ""))
+                    if v > 100:
+                        total += v * multiplier
+                        found = True
+                continue
+            numbers2 = re.findall(r"([\d,]{3,})", line)
+            for n in numbers2:
+                v = int(n.replace(",", ""))
+                if v > 100:
+                    total += v * multiplier
+                    found = True
+    return total if found else None
 
-    Args:
-        station_name: 駅名（「駅」なし）
 
-    Returns:
-        dict: {"passengers": int|None, "passenger_label": str|None}
-    """
-    page_title = f"{station_name}駅"
+def _fetch_wikitext(page_title):
+    """Wikipedia記事のwikitextを取得。ページなし/エラーならNone"""
     try:
         resp = requests.get(
             "https://ja.wikipedia.org/w/api.php",
@@ -194,82 +218,91 @@ def fetch_passenger_count(station_name):
             timeout=30,
         )
         resp.raise_for_status()
-        data = resp.json()
+        pages = resp.json().get("query", {}).get("pages", {})
+        for pid, page in pages.items():
+            if pid == "-1":
+                return None
+            revs = page.get("revisions", [])
+            if revs:
+                return revs[0].get("*", "")
     except Exception as e:
         logger.debug(f"Wikipedia取得失敗 ({page_title}): {e}")
-        return {"passengers": None, "passenger_label": None}
+    return None
 
-    pages = data.get("query", {}).get("pages", {})
-    for pid, page in pages.items():
-        if pid == "-1":
-            break
-        revs = page.get("revisions", [])
-        if not revs:
-            break
-        wikitext = revs[0].get("*", "")
 
-        total = 0
-        found = False
-        for label in ("乗降人員", "乗車人員"):
-            multiplier = 1 if label == "乗降人員" else 2
-            for m in re.finditer(rf"\|\s*{label}\s*=\s*(.+)", wikitext):
-                line = m.group(1)
-                pipe_pos = line.find("|")
-                if pipe_pos >= 0:
-                    line = line[:pipe_pos]
-                # refタグ・マークアップ除去
-                line = re.sub(r"<ref[^>]*/>", "", line)
-                line = re.sub(r"<ref[^>]*>.*?</ref>", "", line, flags=re.DOTALL)
-                line = re.sub(r"<br\s*/?>", " ", line)
-                line = line.replace("'''", "")
-                line = re.sub(r"（[^）]*）", " ", line)
-                line = re.sub(r"\{\{[^}]*\}\}", "", line)
-                # 「数字+人」パターン
-                numbers = re.findall(r"([\d,]+)\s*人", line)
-                if numbers:
-                    for n in numbers:
-                        v = int(n.replace(",", ""))
-                        if v > 100:
-                            total += v * multiplier
-                            found = True
-                    continue
-                # 「人」なし — 3桁以上の数字
-                numbers2 = re.findall(r"([\d,]{3,})", line)
-                for n in numbers2:
-                    v = int(n.replace(",", ""))
-                    if v > 100:
-                        total += v * multiplier
-                        found = True
+def fetch_passenger_count(station_name, prefecture=None):
+    """
+    Wikipedia日本語版から駅の乗降客数を全社合算で取得。
+    曖昧さ回避ページの場合は都道府県名付きの記事を試行。
 
-        if found:
-            logger.info(f"{page_title}: 全社合算乗降人員 = {total:,}")
+    Args:
+        station_name: 駅名（「駅」なし）
+        prefecture: 都道府県名（曖昧さ回避対策、省略可）
+
+    Returns:
+        dict: {"passengers": int|None, "passenger_label": str|None}
+    """
+    # 試行する記事タイトルのリスト
+    titles_to_try = [f"{station_name}駅"]
+    if prefecture:
+        pref_short = prefecture.rstrip("都道府県")
+        titles_to_try.append(f"{station_name}駅_({prefecture})")
+        titles_to_try.append(f"{station_name}駅_({pref_short})")
+
+    for title in titles_to_try:
+        wikitext = _fetch_wikitext(title)
+        if wikitext is None:
+            continue
+
+        # 曖昧さ回避ページかチェック
+        is_disambig = "曖昧さ回避" in wikitext or "Disambig" in wikitext
+
+        total = _parse_passenger_from_wikitext(wikitext)
+        if total is not None:
+            logger.info(f"{title}: 全社合算乗降人員 = {total:,}")
             return {"passengers": total, "passenger_label": "乗降人員（全社合算）"}
 
-    logger.debug(f"{page_title}: 乗降客数データなし")
+        # 曖昧さ回避ページなら都道府県付きリンクを探して試行
+        if is_disambig and prefecture:
+            pref_short = prefecture.rstrip("都道府県")
+            # [[元町駅 (兵庫県)]] のようなリンクを探す
+            for pattern in [rf"\[\[([^]]*駅\s*\({pref_short}[^)]*\))\]\]",
+                            rf"\[\[([^]]*駅\s*\({prefecture}[^)]*\))\]\]"]:
+                link_match = re.search(pattern, wikitext)
+                if link_match:
+                    linked_title = link_match.group(1).replace(" ", "_")
+                    linked_wikitext = _fetch_wikitext(linked_title)
+                    if linked_wikitext:
+                        total2 = _parse_passenger_from_wikitext(linked_wikitext)
+                        if total2 is not None:
+                            logger.info(f"{linked_title}: 全社合算乗降人員 = {total2:,}")
+                            return {"passengers": total2, "passenger_label": "乗降人員（全社合算）"}
+
+    logger.debug(f"{station_name}駅: 乗降客数データなし")
     return {"passengers": None, "passenger_label": None}
 
 
-def _rank_stations_by_popularity(station_names, top_n=3):
+def _rank_stations_by_popularity(station_names, top_n=3, prefecture=None):
     """
     乗降者数（Wikipedia）で駅をランキングし上位N件を返す。
-    まず路線数で上位候補を絞り、その中から乗降者数で最終ランキング。
 
     Args:
         station_names: Overpassで取得した駅名リスト
         top_n: 上位何件を返すか
+        prefecture: 都道府県名（Wikipedia曖昧さ回避対策）
 
     Returns:
         list[dict]: [{"name": str, "line_count": int, "passengers": int|None, "lat": float|None, "lon": float|None}, ...]
     """
     station_to_railways, _railway_stations, station_coords = fetch_rail_graph()
 
-    # 全駅に路線数・乗降者数を付与
+    # 全駅の乗降者数を取得
     all_stations = []
     for name in station_names:
         railways_list = sorted(station_to_railways.get(name, set()))
         line_count = len(railways_list)
         coords = station_coords.get(name, {})
-        pax = fetch_passenger_count(name)
+        pax = fetch_passenger_count(name, prefecture=prefecture)
         all_stations.append({
             "name": name,
             "line_count": line_count,
@@ -321,8 +354,8 @@ def run_city_mode(prefecture, city):
     total_found = len(station_names)
     logger.info(f"取得駅数: {total_found}駅")
 
-    # 2. 乗り入れ路線数で上位5駅を選定
-    top_stations = _rank_stations_by_popularity(station_names, top_n=5)
+    # 2. 乗降者数で上位5駅を選定
+    top_stations = _rank_stations_by_popularity(station_names, top_n=5, prefecture=prefecture)
 
     # 3. 上位5駅の画像を取得
     stations_data = []
