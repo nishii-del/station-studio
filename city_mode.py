@@ -462,6 +462,7 @@ def run_city_mode(prefecture, city):
         image_paths = fetch_station_images(
             station_name, output_subdir,
             lat=st_info.get("lat"), lon=st_info.get("lon"),
+            railways=st_info.get("railways"),
         )
 
         # 相対パスに変換

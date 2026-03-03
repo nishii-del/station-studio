@@ -28,6 +28,83 @@ logger = logging.getLogger("store-traffic")
 # リクエスト間隔（秒）
 REQUEST_DELAY = 2.0
 
+# ターミナル駅リスト（乗降者数が多く、象徴的な建物がある駅）
+_TERMINAL_STATIONS = {
+    "渋谷", "新宿", "池袋", "東京", "品川", "上野", "秋葉原",
+    "横浜", "川崎", "大宮", "千葉", "立川", "町田", "吉祥寺",
+    "大阪", "梅田", "難波", "天王寺", "京都", "三ノ宮", "神戸",
+    "名古屋", "栄", "金山", "札幌", "仙台", "広島", "博多",
+    "天神", "小倉", "新横浜", "武蔵小杉", "自由が丘", "中目黒",
+    "恵比寿", "目黒", "五反田", "大崎", "浜松町", "新橋", "有楽町",
+    "神田", "御茶ノ水", "水道橋", "飯田橋", "四ツ谷", "市ヶ谷",
+    "高田馬場", "中野", "荻窪", "三鷹", "国分寺", "八王子",
+    "藤沢", "戸塚", "鶴見", "蒲田", "錦糸町", "北千住",
+}
+
+# 地下鉄路線名キーワード（この路線の駅は地下鉄タイプ）
+_SUBWAY_KEYWORDS = [
+    "東京メトロ", "都営", "横浜市営地下鉄", "大阪メトロ",
+    "名古屋市営地下鉄", "札幌市営地下鉄", "仙台市地下鉄",
+    "福岡市地下鉄", "京都市営地下鉄", "神戸市営地下鉄",
+]
+
+
+def _classify_station_type(station_name, railways=None):
+    """
+    駅タイプを分類: terminal / subway / local
+    """
+    if station_name in _TERMINAL_STATIONS:
+        return "terminal"
+
+    if railways:
+        for rw in railways:
+            for kw in _SUBWAY_KEYWORDS:
+                if kw in rw:
+                    return "subway"
+
+    return "local"
+
+
+def _generate_search_queries(station_name, station_type):
+    """
+    駅タイプに応じた最適な検索クエリを生成。
+    Returns: dict with commons_queries, places_query, exclude_keywords
+    """
+    if station_type == "terminal":
+        commons = [
+            f"{station_name}駅 駅舎 外観",
+            f"{station_name}駅 建物",
+            f"{station_name} station building exterior",
+        ]
+        places = f"{station_name}駅 駅ビル 外観"
+        exclude = ['platform', 'interior', 'map', 'diagram']
+
+    elif station_type == "subway":
+        commons = [
+            f"{station_name}駅 入口",
+            f"{station_name}駅 地上 出入口",
+            f"{station_name} station entrance ground level",
+        ]
+        places = f"{station_name}駅 入口 地上"
+        exclude = ['platform', 'underground', 'map', 'route']
+
+    else:  # local
+        commons = [
+            f"{station_name}駅 駅舎",
+            f"{station_name}駅 外観",
+            f"{station_name} station building exterior",
+        ]
+        places = f"{station_name}駅 駅舎 外観"
+        exclude = ['platform', 'track', 'interior', 'map']
+
+    logger.info(f"駅タイプ判定: {station_name}駅 → {station_type}")
+    return {
+        "type": station_type,
+        "commons_queries": commons,
+        "places_query": places,
+        "exclude_keywords": exclude,
+    }
+
 # 共通ヘッダー（Wikimediaポリシー準拠）
 _HEADERS = {
     "User-Agent": "StationStudio/1.0 (https://github.com/station-studio; station.studio.app@gmail.com)"
@@ -646,16 +723,17 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
     return []
 
 
-def _wikimedia_commons_search(station_name, output_dir, safe_name):
+def _wikimedia_commons_search(station_name, output_dir, safe_name, search_queries=None):
     """
     Wikimedia Commons検索で駅舎外観写真を探す。
     Wikipedia記事に含まれない写真もヒットする。
     """
-    search_queries = [
-        f"{station_name}駅 駅舎",
-        f"{station_name}駅 外観",
-        f"{station_name} station building",
-    ]
+    if search_queries is None:
+        search_queries = [
+            f"{station_name}駅 駅舎",
+            f"{station_name}駅 外観",
+            f"{station_name} station building",
+        ]
 
     for query in search_queries:
         try:
@@ -730,7 +808,7 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name):
     return []
 
 
-def _places_search_station(station_name):
+def _places_search_station(station_name, places_query=None):
     """
     Google Places API (New) Text Search で駅を検索し、写真リファレンスを取得。
 
@@ -738,13 +816,16 @@ def _places_search_station(station_name):
         list[dict]: 写真メタデータのリスト。各要素は
             {"name": "places/.../photos/...", "widthPx": int, "heightPx": int}
     """
+    if places_query is None:
+        places_query = f"{station_name}駅 駅舎 外観"
+
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": GOOGLE_API_KEY,
         "X-Goog-FieldMask": "places.photos",
     }
     body = {
-        "textQuery": f"{station_name}駅 駅舎 外観",
+        "textQuery": places_query,
         "languageCode": "ja",
         "maxResultCount": 1,
     }
@@ -850,7 +931,7 @@ def _download_places_photo(photo_name, save_path):
         return False
 
 
-def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
+def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION, places_query=None):
     """
     Google Places API (New) で駅画像を取得。
     写真候補をスコアリングして最適な写真を選択。
@@ -859,6 +940,7 @@ def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         station_name: 駅名
         output_dir: 保存先ディレクトリ
         max_images: 最大取得枚数
+        places_query: 検索クエリ（駅タイプ別）
 
     Returns:
         list[str]: 保存された画像パスのリスト
@@ -867,7 +949,7 @@ def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         logger.warning("Google API キーが未設定です。Places APIをスキップします。")
         return []
 
-    photos = _places_search_station(station_name)
+    photos = _places_search_station(station_name, places_query=places_query)
     if not photos:
         return []
 
@@ -943,13 +1025,15 @@ def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION
 
 
 def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION,
-                         lat=None, lon=None):
+                         lat=None, lon=None, railways=None):
     """
     駅画像を取得するメインエントリポイント
 
+    駅タイプ（terminal/subway/local）を判定し、最適な検索クエリを生成。
     フォールバック順序:
-      1. Wikipedia記事画像（無料・CC BY-SA・駅舎外観ファイル名でスコアリング）
-      2. Google Places API（ユーザー投稿写真・スコアリング＋品質フィルタ）
+      1. Wikipedia記事画像（ファイル名スコアリング＋品質チェック）
+      2. Wikimedia Commons検索（駅タイプ別クエリ）
+      3. Google Places API（駅タイプ別クエリ）
 
     Args:
         station_name: 駅名
@@ -957,6 +1041,7 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         max_images: 最大取得枚数
         lat: 駅の緯度（未使用、互換性のため残す）
         lon: 駅の経度（未使用、互換性のため残す）
+        railways: 路線名リスト（地下鉄判定用）
 
     Returns:
         list[str]: 保存された画像パスのリスト
@@ -967,21 +1052,31 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
 
     safe_name = _sanitize_filename(station_name)
 
+    # 駅タイプ判定 → 検索クエリ生成
+    station_type = _classify_station_type(station_name, railways=railways)
+    queries = _generate_search_queries(station_name, station_type)
+
     # 1. Wikipedia記事の画像（ファイル名スコアリング＋品質チェック）
     logger.info(f"Wikipedia記事画像を検索: {station_name}駅")
     paths = _wikipedia_station_image(station_name, output_dir, safe_name)
     if paths:
         return paths
 
-    # 2. Wikimedia Commons検索（Wikipedia記事にない写真も探す）
-    logger.info(f"Wikimedia Commonsで画像検索: {station_name}駅")
-    paths = _wikimedia_commons_search(station_name, output_dir, safe_name)
+    # 2. Wikimedia Commons検索（駅タイプ別クエリ）
+    logger.info(f"Wikimedia Commonsで画像検索: {station_name}駅 (type={station_type})")
+    paths = _wikimedia_commons_search(
+        station_name, output_dir, safe_name,
+        search_queries=queries["commons_queries"],
+    )
     if paths:
         return paths
 
-    # 3. Google Places API (New)
-    logger.info(f"Places APIで画像検索: {station_name}駅")
-    paths = search_places_images(station_name, output_dir, max_images)
+    # 3. Google Places API（駅タイプ別クエリ）
+    logger.info(f"Places APIで画像検索: {station_name}駅 (type={station_type})")
+    paths = search_places_images(
+        station_name, output_dir, max_images,
+        places_query=queries["places_query"],
+    )
     if paths:
         return paths
 
