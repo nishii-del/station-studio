@@ -783,7 +783,7 @@ if page == "検索":
             with fc2:
                 # 移動時間の最大値を取得
                 all_times = [s.get("travel_time") for rw in railways for s in rw.get("stations", []) if s.get("travel_time")]
-                max_time = max(all_times) if all_times else 120
+                max_time = max(max(all_times) if all_times else 120, 10)
                 # 保存された移動時間フィルタがあれば復元
                 saved_time = st.session_state.get("_filter_time_limit")
                 if saved_time is not None:
