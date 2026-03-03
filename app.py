@@ -191,6 +191,16 @@ var d = window.parent.document;
 d.documentElement.lang = 'ja';
 d.documentElement.translate = false;
 d.documentElement.classList.add('notranslate');
+d.querySelector('meta[name="google"]') || (function(){
+    var m = d.createElement('meta');
+    m.name = 'google';
+    m.content = 'notranslate';
+    d.head.appendChild(m);
+})();
+// Chrome翻訳バーを非表示
+var tb = d.querySelector('.goog-te-banner-frame');
+if(tb) tb.style.display = 'none';
+d.body.style.top = '0px';
 </script>""", height=0)
 st.markdown("""
 <style>
