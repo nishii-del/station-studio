@@ -520,7 +520,7 @@ def render_station_cards(data, mode_key):
 # ===================================================
 
 with st.sidebar:
-    st.markdown('<div class="logo">ST<span class="ai">AI</span>TION STUDIO</div>', unsafe_allow_html=True)
+    st.markdown('<div class="logo" translate="no">ST<span class="ai">AI</span>TION STUDIO</div>', unsafe_allow_html=True)
     page = st.radio("menu", ["検索", "ライブラリ", "保管庫"], label_visibility="hidden")
 
     st.markdown("---")
@@ -550,7 +550,7 @@ with st.sidebar:
 # ヘッダー
 # ===================================================
 
-st.markdown('<div class="logo-main">ST<span class="ai">AI</span>TION STUDIO</div>', unsafe_allow_html=True)
+st.markdown('<div class="logo-main" translate="no">ST<span class="ai">AI</span>TION STUDIO</div>', unsafe_allow_html=True)
 
 
 # ===================================================
