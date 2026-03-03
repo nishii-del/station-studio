@@ -305,8 +305,11 @@ def _is_aerial_photo(image_path):
 def _is_train_or_platform_photo(image_path):
     """
     電車やホームの写真かどうかを判定。
-    電車: 画像中央部に水平方向に均一な色帯（車体）が多い。
-    駅舎建物は窓・ドア・看板等で色が変化するため均一帯は少ない。
+    複数チェック:
+      1. 水平均一帯（電車車体）
+      2. ホーム（暗い線路 + 黄色安全線）
+      3. 金属的なグレー帯（電車のステンレス車体）
+      4. 架線・パンタグラフ（上部の細い水平線構造）
     """
     try:
         img = Image.open(image_path).convert("RGB")
@@ -316,11 +319,11 @@ def _is_train_or_platform_photo(image_path):
             img = img.resize((800, int(h * ratio)))
             w, h = img.size
 
-        # 中央60%（上下20%を除外：空と地面）の水平均一性チェック
-        y_start = h // 5
-        y_end = h * 4 // 5
         sample_step = max(1, w // 30)
 
+        # Check 1: 中央60%の水平均一性（電車車体は横に均一な色）
+        y_start = h // 5
+        y_end = h * 4 // 5
         uniform_rows = 0
         total_rows = 0
 
@@ -328,20 +331,13 @@ def _is_train_or_platform_photo(image_path):
             samples = []
             for x in range(0, w, sample_step):
                 samples.append(img.getpixel((min(x, w - 1), y)))
-
             if len(samples) < 5:
                 continue
             total_rows += 1
-
             r_vals = [p[0] for p in samples]
             g_vals = [p[1] for p in samples]
             b_vals = [p[2] for p in samples]
-
-            r_range = max(r_vals) - min(r_vals)
-            g_range = max(g_vals) - min(g_vals)
-            b_range = max(b_vals) - min(b_vals)
-            avg_range = (r_range + g_range + b_range) / 3
-
+            avg_range = (max(r_vals) - min(r_vals) + max(g_vals) - min(g_vals) + max(b_vals) - min(b_vals)) / 3
             if avg_range < 35:
                 uniform_rows += 1
 
@@ -349,7 +345,7 @@ def _is_train_or_platform_photo(image_path):
             return False
 
         uniform_ratio = uniform_rows / total_rows
-        if uniform_ratio > 0.55:
+        if uniform_ratio > 0.45:
             logger.debug(f"電車判定: uniform={uniform_ratio:.2f} → 電車(均一帯)")
             return True
 
@@ -369,7 +365,37 @@ def _is_train_or_platform_photo(image_path):
             logger.debug(f"電車判定: dark_bt={dark_bottom:.2f} yellow={yellow_rows}rows → ホーム(線路+黄線)")
             return True
 
-        logger.debug(f"電車判定: uniform={uniform_ratio:.2f} dark_bt={dark_bottom:.2f} yellow={yellow_rows} → OK")
+        # Check 3: 金属ステンレス車体検出（中央にグレー均一帯が広がる）
+        mid_region = img.crop((0, h // 4, w, h * 3 // 4))
+        mid_pixels = list(mid_region.getdata())
+        metallic = 0
+        for r, g, b in mid_pixels:
+            diff = max(r, g, b) - min(r, g, b)
+            brightness = (r + g + b) / 3
+            # ステンレス: 彩度低い + 中間明度
+            if diff < 20 and 120 < brightness < 210:
+                metallic += 1
+        metallic_ratio = metallic / len(mid_pixels) if mid_pixels else 0
+        if metallic_ratio > 0.4:
+            logger.debug(f"電車判定: metallic={metallic_ratio:.2f} → 電車(金属車体)")
+            return True
+
+        # Check 4: 画像全体にレール・架線の水平線が多い
+        # （線路の砂利 = 茶色/灰色の低明度ピクセルが画像下半分に多い）
+        lower_half = img.crop((0, h // 2, w, h))
+        lh_pixels = list(lower_half.getdata())
+        gravel = 0
+        for r, g, b in lh_pixels:
+            brightness = (r + g + b) / 3
+            diff = max(r, g, b) - min(r, g, b)
+            if 40 < brightness < 120 and diff < 30:
+                gravel += 1
+        gravel_ratio = gravel / len(lh_pixels) if lh_pixels else 0
+        if gravel_ratio > 0.5 and dark_bottom > 0.15:
+            logger.debug(f"電車判定: gravel={gravel_ratio:.2f} dark_bt={dark_bottom:.2f} → ホーム(砂利線路)")
+            return True
+
+        logger.debug(f"電車判定: uniform={uniform_ratio:.2f} metallic={metallic_ratio:.2f} gravel={gravel_ratio:.2f} → OK")
         return False
     except Exception as e:
         logger.debug(f"電車判定エラー: {e}")
@@ -664,7 +690,7 @@ def _places_search_station(station_name):
         "X-Goog-FieldMask": "places.photos",
     }
     body = {
-        "textQuery": f"{station_name}駅",
+        "textQuery": f"{station_name}駅 駅舎 外観",
         "languageCode": "ja",
         "maxResultCount": 1,
     }
@@ -820,15 +846,24 @@ def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION
             continue
 
         tried += 1
-        # 屋外判定 + 空撮判定 + 電車/ホーム判定でスコア補正
+        # 電車/ホーム判定（屋内外問わず最優先で拒否）
+        if _is_train_or_platform_photo(save_path):
+            logger.info(f"Places Photo: 電車/ホーム写真スキップ: {photo_name}")
+            os.remove(save_path)
+            continue
+        # 屋外判定
         outdoor = _is_outdoor_photo(save_path)
-        aerial = _is_aerial_photo(save_path) if outdoor else False
-        train = _is_train_or_platform_photo(save_path) if outdoor else False
-        if aerial or train:
-            final_score = meta_score - 100
-        else:
-            final_score = meta_score + (40 if outdoor else -30)
-        logger.debug(f"Places Photo スコア={meta_score}→{final_score} (outdoor={outdoor} aerial={aerial} train={train}): {photo_name}")
+        if not outdoor:
+            logger.info(f"Places Photo: 屋内写真スキップ: {photo_name}")
+            os.remove(save_path)
+            continue
+        # 空撮判定
+        if _is_aerial_photo(save_path):
+            logger.info(f"Places Photo: 空撮写真スキップ: {photo_name}")
+            os.remove(save_path)
+            continue
+        final_score = meta_score + 40
+        logger.debug(f"Places Photo スコア={meta_score}→{final_score}: {photo_name}")
 
         if final_score > best_score:
             # 前の候補を削除
