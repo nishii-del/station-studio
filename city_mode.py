@@ -406,7 +406,10 @@ def run_city_mode(prefecture, city):
         station_name = st_info["name"]
         logger.info(f"[{i+1}/{len(top_stations)}] {station_name} の画像を取得中...")
 
-        image_paths = fetch_station_images(station_name, output_subdir)
+        image_paths = fetch_station_images(
+            station_name, output_subdir,
+            lat=st_info.get("lat"), lon=st_info.get("lon"),
+        )
 
         # 相対パスに変換
         rel_paths = [os.path.relpath(p, os.path.dirname(output_subdir)) for p in image_paths]

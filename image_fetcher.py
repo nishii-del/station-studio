@@ -1,5 +1,5 @@
 """
-画像取得モジュール - Wikipedia記事画像 + Google Places API (New)
+画像取得モジュール - Wikipedia + Google Places API (New)
 """
 import io
 import json
@@ -853,35 +853,38 @@ def search_places_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     return saved_paths
 
 
-def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION):
+def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION,
+                         lat=None, lon=None):
     """
     駅画像を取得するメインエントリポイント
 
-    フォールバック順序（商用利用OKのソースのみ）:
-      1. Wikipedia記事画像（無料・CC BY-SA）
-      2. Google Places API New（商用OK・スコアリングで外観優先）
+    フォールバック順序:
+      1. Wikipedia記事画像（無料・CC BY-SA・駅舎外観ファイル名でスコアリング）
+      2. Google Places API（ユーザー投稿写真・スコアリング＋品質フィルタ）
 
     Args:
         station_name: 駅名
         output_dir: 保存先ディレクトリ
         max_images: 最大取得枚数
+        lat: 駅の緯度（未使用、互換性のため残す）
+        lon: 駅の経度（未使用、互換性のため残す）
 
     Returns:
         list[str]: 保存された画像パスのリスト
     """
     safe_name = _sanitize_filename(station_name)
 
-    # 1. Wikipedia記事のメイン画像（無料・駅舎外観が多い）
+    # 1. Wikipedia記事の画像（ファイル名スコアリング＋品質チェック）
     logger.info(f"Wikipedia記事画像を検索: {station_name}駅")
     paths = _wikipedia_station_image(station_name, output_dir, safe_name)
     if paths:
         return paths
 
-    # 2. Google Places API (New)（商用利用OK）
+    # 2. Google Places API (New)
     logger.info(f"Places APIで画像検索: {station_name}駅")
     paths = search_places_images(station_name, output_dir, max_images)
     if paths:
         return paths
 
-    logger.info(f"画像取得失敗: {station_name}駅（Wikipedia・Places API ともに取得できず）")
+    logger.info(f"画像取得失敗: {station_name}駅")
     return []
