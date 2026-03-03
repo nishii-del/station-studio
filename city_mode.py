@@ -42,9 +42,8 @@ def fetch_stations_in_city(prefecture, city):
 
     # 都道府県を含めた正確なクエリ（同名市区の誤マッチ防止）
     query = f"""
-    [out:json][timeout:90];
-    area["name"="{prefecture}"]->.pref;
-    area["name"="{city}"](area.pref)->.a;
+    [out:json][timeout:180];
+    area["name"="{city}"]["boundary"="administrative"]->.a;
     (
       node["railway"="station"](area.a);
       node["railway"="halt"](area.a);
@@ -58,7 +57,7 @@ def fetch_stations_in_city(prefecture, city):
             resp = requests.post(
                 endpoint,
                 data={"data": query},
-                timeout=120,
+                timeout=240,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -90,15 +89,40 @@ def _extract_station_names(elements):
     return stations
 
 
+def _point_in_polygon(lat, lon, polygon):
+    """
+    Ray casting法でポイントがポリゴン内にあるか判定。
+    polygon: [(lon, lat), ...] のリスト
+    """
+    n = len(polygon)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = polygon[i]  # lon, lat
+        xj, yj = polygon[j]
+        if ((yi > lat) != (yj > lat)) and (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
 def _find_stations_by_bbox(prefecture, city):
     """
-    Nominatim + 鉄道グラフキャッシュで市区内の駅を取得（Overpass不要）
+    Nominatim（ポリゴン境界）+ 鉄道グラフキャッシュで市区内の駅を取得
+    市の実際の境界ポリゴンを使い、隣接市の駅を正確に除外する。
     """
     logger.info(f"Nominatim + キャッシュで {prefecture}{city} の駅を検索中...")
+
+    # ポリゴン付きで市区境界を取得
     try:
         resp = requests.get(
             "https://nominatim.openstreetmap.org/search",
-            params={"q": f"{prefecture}{city}", "format": "json", "limit": 1},
+            params={
+                "q": f"{prefecture}{city}",
+                "format": "json",
+                "limit": 1,
+                "polygon_geojson": 1,
+            },
             headers={"User-Agent": "StationStudio/1.0"},
             timeout=30,
         )
@@ -112,19 +136,48 @@ def _find_stations_by_bbox(prefecture, city):
         logger.warning(f"Nominatimで {prefecture}{city} が見つかりません")
         return []
 
-    bbox = results[0]["boundingbox"]  # [lat_min, lat_max, lon_min, lon_max]
+    result = results[0]
+    geojson = result.get("geojson", {})
+    geo_type = geojson.get("type", "")
+    coordinates = geojson.get("coordinates", [])
+
+    # ポリゴン境界を抽出
+    polygons = []
+    if geo_type == "Polygon" and coordinates:
+        polygons = [coordinates[0]]  # 外周のみ
+    elif geo_type == "MultiPolygon" and coordinates:
+        polygons = [poly[0] for poly in coordinates]  # 各ポリゴンの外周
+
+    _, _, station_coords = fetch_rail_graph()
+
+    if polygons:
+        # ポリゴンで正確にフィルタ
+        stations = []
+        seen = set()
+        for name, coords in station_coords.items():
+            if name in seen:
+                continue
+            lat = coords.get("lat", 0)
+            lon = coords.get("lon", 0)
+            for poly in polygons:
+                if _point_in_polygon(lat, lon, poly):
+                    stations.append(name)
+                    seen.add(name)
+                    break
+        logger.info(f"Nominatimポリゴン結果: {len(stations)}駅")
+        return stations
+
+    # ポリゴンが取れなかった場合はbboxフォールバック
+    logger.warning("ポリゴン取得失敗、bboxフォールバック")
+    bbox = result["boundingbox"]
     lat_min, lat_max = float(bbox[0]), float(bbox[1])
     lon_min, lon_max = float(bbox[2]), float(bbox[3])
-
-    # bboxを5%縮小して隣接市の駅が入りにくくする
     lat_margin = (lat_max - lat_min) * 0.05
     lon_margin = (lon_max - lon_min) * 0.05
     lat_min += lat_margin
     lat_max -= lat_margin
     lon_min += lon_margin
     lon_max -= lon_margin
-
-    _, _, station_coords = fetch_rail_graph()
 
     stations = []
     seen = set()
@@ -136,7 +189,7 @@ def _find_stations_by_bbox(prefecture, city):
             stations.append(name)
             seen.add(name)
 
-    logger.info(f"Nominatim+キャッシュ結果: {len(stations)}駅")
+    logger.info(f"Nominatim+bbox結果: {len(stations)}駅")
     return stations
 
 
