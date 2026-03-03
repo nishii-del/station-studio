@@ -1598,5 +1598,5 @@ elif page == "保管庫":
 # ===================================================
 
 if _is_downloading():
-    time.sleep(0.5)
+    time.sleep(3)
     st.rerun()
