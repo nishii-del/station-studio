@@ -103,6 +103,10 @@ def _save_feedback(station_name, rating, image_path=""):
     }
     with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
         json.dump(fb, f, ensure_ascii=False, indent=2)
+    # 送信後ローカルからクリア（スプシに送ったので不要）
+    del fb[station_name]
+    with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
+        json.dump(fb, f, ensure_ascii=False, indent=2)
     # Google Sheets保存
     ws = _get_gsheet()
     if ws:
