@@ -16,6 +16,10 @@ ODPT_CONSUMER_KEY = os.environ.get("ODPT_CONSUMER_KEY", "YOUR_ODPT_KEY_HERE")
 # 取得先: https://console.cloud.google.com/
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyDXVRRnsZdv618dT1iPai0jZpjP9HnMteQ")
 
+# Flickr API キー（商用利用可能な駅画像検索に使用）
+# 取得先: https://www.flickr.com/services/apps/create/apply/
+FLICKR_API_KEY = os.environ.get("FLICKR_API_KEY", "YOUR_FLICKR_API_KEY_HERE")
+
 # Places API (New) エンドポイント
 PLACES_TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 PLACES_PHOTO_URL_TEMPLATE = "https://places.googleapis.com/v1/{photo_name}/media"

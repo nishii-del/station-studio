@@ -1,5 +1,5 @@
 """
-画像取得モジュール - Wikipedia + Wikimedia Commons（商用利用可能ライセンスのみ）
+画像取得モジュール - Wikipedia + Wikimedia Commons + Flickr（商用利用可能ライセンスのみ）
 """
 import io
 import json
@@ -14,6 +14,7 @@ from PIL import Image
 
 from config import (
     GOOGLE_API_KEY,
+    FLICKR_API_KEY,
     PLACES_TEXT_SEARCH_URL,
     PLACES_PHOTO_URL_TEMPLATE,
     PLACES_PHOTO_MAX_WIDTH,
@@ -77,6 +78,95 @@ def _is_commercial_license(file_title):
     except Exception as e:
         logger.debug(f"Commons: ライセンス確認エラー: {file_title} ({e})")
         return False
+
+
+# Flickr 商用利用可能ライセンスID
+# 4=CC BY, 5=CC BY-SA, 7=PDM, 8=US Gov, 9=CC0, 10=PDM
+_FLICKR_COMMERCIAL_LICENSES = "4,5,7,8,9,10"
+
+
+def _flickr_search_station(station_name, output_dir, safe_name, station_type=None):
+    """
+    Flickr APIで駅画像を検索（商用利用可能ライセンスのみ）。
+    """
+    if FLICKR_API_KEY == "YOUR_FLICKR_API_KEY_HERE":
+        logger.debug("Flickr APIキーが未設定です。スキップします。")
+        return []
+
+    if station_type == "terminal":
+        queries = [
+            f"{station_name} ランドマーク",
+            f"{station_name} 風景",
+            f"{station_name} landmark",
+        ]
+    else:
+        queries = [
+            f"{station_name}駅 駅舎",
+            f"{station_name}駅 外観",
+            f"{station_name} station building",
+        ]
+
+    for query in queries:
+        try:
+            resp = requests.get(
+                "https://api.flickr.com/services/rest/",
+                params={
+                    "method": "flickr.photos.search",
+                    "api_key": FLICKR_API_KEY,
+                    "text": query,
+                    "license": _FLICKR_COMMERCIAL_LICENSES,
+                    "sort": "relevance",
+                    "content_type": 1,
+                    "media": "photos",
+                    "per_page": 10,
+                    "format": "json",
+                    "nojsoncallback": 1,
+                    "extras": "url_l,url_o,url_c,url_z",
+                },
+                headers=_HEADERS,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.RequestException as e:
+            logger.debug(f"Flickr検索エラー: {e}")
+            continue
+
+        photos = data.get("photos", {}).get("photo", [])
+        if not photos:
+            continue
+
+        for photo in photos:
+            image_url = (
+                photo.get("url_o")
+                or photo.get("url_l")
+                or photo.get("url_c")
+                or photo.get("url_z")
+            )
+            if not image_url:
+                continue
+
+            save_path = os.path.join(output_dir, f"{safe_name}_1.jpg")
+
+            if _download_image(image_url, save_path):
+                if not _is_outdoor_photo(save_path):
+                    os.remove(save_path)
+                    continue
+                if _is_aerial_photo(save_path):
+                    os.remove(save_path)
+                    continue
+                if _is_train_or_platform_photo(save_path):
+                    os.remove(save_path)
+                    continue
+
+                logger.info(f"Flickr: 駅舎外観取得成功 (商用利用可): {station_name}駅")
+                return [save_path]
+
+            time.sleep(REQUEST_DELAY)
+
+    logger.info(f"Flickr: 駅舎外観写真なし: {station_name}駅")
+    return []
+
 
 # ターミナル駅リスト（乗降者数が多く、象徴的な建物がある駅）
 _TERMINAL_STATIONS = {
@@ -1124,10 +1214,10 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     駅画像を取得するメインエントリポイント
 
     駅タイプ（terminal/subway/local）を判定し、最適な検索クエリを生成。
-    フォールバック順序:
+    フォールバック順序（すべて商用利用可能）:
       1. Wikipedia記事画像（ファイル名スコアリング＋品質チェック）
-      2. Wikimedia Commons検索（駅タイプ別クエリ）
-      3. Google Places API（駅タイプ別クエリ）
+      2. Wikimedia Commons検索（商用利用可ライセンスのみ）
+      3. Flickr検索（商用利用可ライセンスのみ）
 
     Args:
         station_name: 駅名
@@ -1164,10 +1254,16 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         if paths:
             return paths
 
-        # 2. Google Places APIは商用利用不可のためスキップ
-        pass
+        # 2. Flickr検索（商用利用可能ライセンスのみ）
+        logger.info(f"Flickrでランドマーク検索: {station_name}")
+        paths = _flickr_search_station(
+            station_name, output_dir, safe_name,
+            station_type="terminal",
+        )
+        if paths:
+            return paths
     else:
-        # subway / local: Wikipedia駅記事 → Commons
+        # subway / local: Wikipedia駅記事 → Commons → Flickr
         # 1. Wikipedia記事の画像（ファイル名スコアリング＋品質チェック）
         logger.info(f"Wikipedia記事画像を検索: {station_name}駅")
         paths = _wikipedia_station_image(station_name, output_dir, safe_name)
@@ -1179,6 +1275,15 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         paths = _wikimedia_commons_search(
             station_name, output_dir, safe_name,
             search_queries=queries["commons_queries"],
+        )
+        if paths:
+            return paths
+
+        # 3. Flickr検索（商用利用可能ライセンスのみ）
+        logger.info(f"Flickrで画像検索: {station_name}駅 (type={station_type})")
+        paths = _flickr_search_station(
+            station_name, output_dir, safe_name,
+            station_type=station_type,
         )
         if paths:
             return paths
