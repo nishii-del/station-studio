@@ -179,6 +179,7 @@ _TERMINAL_STATIONS = {
     "神田", "御茶ノ水", "水道橋", "飯田橋", "四ツ谷", "市ヶ谷",
     "高田馬場", "中野", "荻窪", "三鷹", "国分寺", "八王子",
     "藤沢", "戸塚", "鶴見", "蒲田", "錦糸町", "北千住",
+    "姫路", "明石", "二子玉川",
 }
 
 # 地下鉄路線名キーワード（この路線の駅は地下鉄タイプ）
@@ -222,6 +223,9 @@ _TERMINAL_LANDMARKS = {
     "博多": ["Hakata Canal City", "博多キャナルシティ"],
     "仙台": ["Sendai arcade", "仙台アーケード"],
     "札幌": ["Sapporo TV Tower", "札幌テレビ塔"],
+    "姫路": ["Himeji Castle", "姫路城", "姫路城 大手前通り"],
+    "明石": ["Akashi Kaikyo Bridge", "明石海峡大橋", "明石 魚の棚"],
+    "二子玉川": ["Futakotamagawa Rise", "二子玉川ライズ", "二子玉川 多摩川"],
 }
 
 
@@ -249,17 +253,22 @@ def _generate_search_queries(station_name, station_type):
     elif station_type == "subway":
         commons = [
             f"{station_name}駅 入口",
-            f"{station_name}駅 地上 出入口",
-            f"{station_name} station entrance ground level",
+            f"{station_name}駅 出入口",
+            f"{station_name}駅 外観",
+            f"{station_name} station entrance",
+            f"{station_name} station exit",
         ]
         places = f"{station_name}駅 入口 地上"
-        exclude = ['platform', 'underground', 'map', 'route']
+        exclude = ['platform', 'underground', 'map', 'route',
+                   'mitsukoshi', '三越', 'department', 'デパート']
 
     else:  # local
         commons = [
             f"{station_name}駅 駅舎",
             f"{station_name}駅 外観",
-            f"{station_name} station building exterior",
+            f"{station_name}駅",
+            f"{station_name} station building",
+            f"{station_name} station",
         ]
         places = f"{station_name}駅 駅舎 外観"
         exclude = ['platform', 'track', 'interior', 'map']
@@ -537,9 +546,18 @@ def _is_aerial_photo(image_path):
         dark_ground = sum(1 for r, g, b in bottom_pixels if (r + g + b) / 3 < 100)
         ground_ratio = dark_ground / bottom_total
 
-        # 空撮: 中央にグレー屋根が非常に多い
-        is_aerial = roof_ratio > 0.4
-        logger.debug(f"空撮判定: roof={roof_ratio:.2f} ground={ground_ratio:.2f} → {'空撮' if is_aerial else '地上'}")
+        # 下部にも建物の屋根が見える場合は空撮の可能性が高い
+        bottom_roof = 0
+        for r, g, b in bottom_pixels:
+            diff = max(r, g, b) - min(r, g, b)
+            brightness = (r + g + b) / 3
+            if diff < 30 and 60 < brightness < 180:
+                bottom_roof += 1
+        bottom_roof_ratio = bottom_roof / bottom_total if bottom_total else 0
+
+        # 空撮判定: 中央にグレー屋根が多い、または上に空が少なく下部にも屋根が見える
+        is_aerial = (roof_ratio > 0.35) or (roof_ratio > 0.25 and bottom_roof_ratio > 0.25)
+        logger.debug(f"空撮判定: roof={roof_ratio:.2f} bottom_roof={bottom_roof_ratio:.2f} ground={ground_ratio:.2f} → {'空撮' if is_aerial else '地上'}")
         return is_aerial
     except Exception as e:
         logger.debug(f"空撮判定エラー: {e}")
@@ -638,13 +656,16 @@ def _score_image_filename(title, station_name):
         'fare gate', 'ticket gate',
         'map', 'diagram', 'logo', 'symbol', 'banner', 'icon', 'pictogram',
         'route', '路線', 'linemap',
-        'aerial', 'panorama', 'skyline',
+        'aerial', 'panorama',
         'hotel', 'shrine', 'temple', 'department', 'museum',
+        'mitsukoshi', '三越', 'takashimaya', '高島屋', 'isetan', '伊勢丹',
         'ward office', 'city hall',
         'bus_', 'バス停', 'taxi', 'buswait',
         'familymart', 'lawson', 'seven-eleven', '7-eleven',
         'convenience', 'コンビニ', 'starbucks', 'mcdonalds',
         'disambig', 'commons-logo',
+        '1960', '1970', '1980', '1990', '昭和', 'historic', 'historical',
+        'old_', 'former', '旧',
     ]
     if any(kw in lower for kw in reject):
         return None
@@ -845,13 +866,13 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
     logger.info(f"Wikipedia: {station_name}駅 上位候補: {[(t.split(':')[-1][:30], s) for t, s in scored_images[:5]]}")
 
     # Step 3: 上位候補のURLを一括取得
-    top_titles = [t for t, s in scored_images[:8]]
+    top_titles = [t for t, s in scored_images[:12]]
     url_map = _get_wikipedia_image_urls(top_titles)
 
     # Step 4: スコア順にダウンロード・品質チェック（スコア>0のみ）
-    for title, filename_score in scored_images[:8]:
-        if filename_score <= 0:
-            logger.info(f"Wikipedia: 残り候補は低スコア(≤0)、Places APIにフォールバック")
+    for title, filename_score in scored_images[:12]:
+        if filename_score < -10:
+            logger.info(f"Wikipedia: 残り候補は低スコア(<-10)、フォールバック")
             break
         image_url = url_map.get(title, "")
         if not image_url:
