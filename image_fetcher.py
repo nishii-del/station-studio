@@ -1,5 +1,5 @@
 """
-画像取得モジュール - Wikipedia + Google Places API (New)
+画像取得モジュール - Wikipedia + Wikimedia Commons（商用利用可能ライセンスのみ）
 """
 import io
 import json
@@ -27,6 +27,56 @@ logger = logging.getLogger("store-traffic")
 
 # リクエスト間隔（秒）
 REQUEST_DELAY = 2.0
+
+# 商用利用可能なライセンス
+_COMMERCIAL_OK_LICENSES = {
+    "cc0", "cc-zero", "pd", "public domain",
+    "cc-by", "cc-by-1.0", "cc-by-2.0", "cc-by-2.5", "cc-by-3.0", "cc-by-4.0",
+    "cc-by-sa", "cc-by-sa-1.0", "cc-by-sa-2.0", "cc-by-sa-2.5", "cc-by-sa-3.0", "cc-by-sa-4.0",
+}
+
+
+def _is_commercial_license(file_title):
+    """
+    Wikimedia Commonsのファイルが商用利用可能なライセンスかチェック。
+    CC BY-NC など非商用ライセンスの画像を除外する。
+    """
+    try:
+        resp = requests.get(
+            "https://commons.wikimedia.org/w/api.php",
+            params={
+                "action": "query",
+                "titles": file_title,
+                "prop": "imageinfo",
+                "iiprop": "extmetadata",
+                "format": "json",
+            },
+            headers=_HEADERS,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        pages = resp.json().get("query", {}).get("pages", {})
+        for page in pages.values():
+            metadata = page.get("imageinfo", [{}])[0].get("extmetadata", {})
+            license_short = metadata.get("LicenseShortName", {}).get("value", "").lower().strip()
+            license_url = metadata.get("LicenseUrl", {}).get("value", "").lower()
+            # 正規化: スペースをハイフンに変換して統一
+            license_normalized = license_short.replace(" ", "-")
+            # NC（非商用）を含むライセンスは除外
+            if "nc" in license_normalized or "nc" in license_url:
+                logger.debug(f"Commons: 非商用ライセンス除外: {file_title} ({license_short})")
+                return False
+            # 既知の商用OKライセンスにマッチするか確認
+            for ok in _COMMERCIAL_OK_LICENSES:
+                if ok in license_normalized or ok in license_url:
+                    logger.debug(f"Commons: 商用利用可: {file_title} ({license_short})")
+                    return True
+            # 不明なライセンスは安全側で除外
+            logger.debug(f"Commons: 不明ライセンス除外: {file_title} ({license_short})")
+            return False
+    except Exception as e:
+        logger.debug(f"Commons: ライセンス確認エラー: {file_title} ({e})")
+        return False
 
 # ターミナル駅リスト（乗降者数が多く、象徴的な建物がある駅）
 _TERMINAL_STATIONS = {
@@ -818,6 +868,10 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name,
         url_map = _get_wikipedia_image_urls(top_titles)
 
         for title, filename_score in scored[:5]:
+            # 商用利用可能なライセンスかチェック
+            if not _is_commercial_license(title):
+                continue
+
             image_url = url_map.get(title, "")
             if not image_url:
                 continue
@@ -839,7 +893,7 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name,
                     os.remove(save_path)
                     continue
 
-                logger.info(f"Commons: 駅舎外観取得成功: {station_name}駅 ({title})")
+                logger.info(f"Commons: 駅舎外観取得成功 (商用利用可): {station_name}駅 ({title})")
                 return [save_path]
 
             time.sleep(REQUEST_DELAY)
@@ -1110,15 +1164,10 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         if paths:
             return paths
 
-        # 2. Google Places APIでランドマーク検索
-        paths = search_places_images(
-            station_name, output_dir, max_images,
-            places_query=queries["places_query"],
-        )
-        if paths:
-            return paths
+        # 2. Google Places APIは商用利用不可のためスキップ
+        pass
     else:
-        # subway / local: Wikipedia駅記事 → Commons → Places API
+        # subway / local: Wikipedia駅記事 → Commons
         # 1. Wikipedia記事の画像（ファイル名スコアリング＋品質チェック）
         logger.info(f"Wikipedia記事画像を検索: {station_name}駅")
         paths = _wikipedia_station_image(station_name, output_dir, safe_name)
@@ -1130,15 +1179,6 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         paths = _wikimedia_commons_search(
             station_name, output_dir, safe_name,
             search_queries=queries["commons_queries"],
-        )
-        if paths:
-            return paths
-
-        # 3. Google Places API（駅タイプ別クエリ）
-        logger.info(f"Places APIで画像検索: {station_name}駅 (type={station_type})")
-        paths = search_places_images(
-            station_name, output_dir, max_images,
-            places_query=queries["places_query"],
         )
         if paths:
             return paths
