@@ -733,8 +733,10 @@ def _score_image_filename(title, station_name):
         'fare gate', 'ticket gate',
         'map', 'diagram', 'logo', 'symbol', 'banner', 'icon', 'pictogram',
         'route', '路線', 'linemap',
+        '-sign', '_sign', 'stationsign', '案内', '駅名標', 'information', 'line-map',
         'aerial', 'panorama',
         'hotel', 'shrine', 'temple', 'department', 'museum',
+        'kantei', '官邸', 'residence', 'government',
         'mitsukoshi', '三越', 'takashimaya', '高島屋', 'isetan', '伊勢丹',
         'ward office', 'city hall',
         'bus_', 'バス停', 'taxi', 'buswait',
@@ -966,43 +968,50 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
     top_titles = [t for t, s in scored_images[:12]]
     url_map = _get_wikipedia_image_urls(top_titles)
 
-    # Step 4: スコア順にダウンロード・品質チェック（スコア>0のみ）
-    for title, filename_score in scored_images[:12]:
-        if filename_score < -10:
-            logger.info(f"Wikipedia: 残り候補は低スコア(<-10)、フォールバック")
+    # Step 4: スコア順にダウンロード・品質チェック
+    # Pass 1: 厳格フィルター（屋外+空撮+ホーム判定）
+    # Pass 2: 緩和フィルター（屋外判定のみ） ← 全て弾かれた場合のフォールバック
+    for strict in [True, False]:
+        pass_label = "厳格" if strict else "緩和"
+        for title, filename_score in scored_images[:12]:
+            if filename_score < -10:
+                break
+            image_url = url_map.get(title, "")
+            if not image_url:
+                continue
+
+            lower_url = image_url.lower()
+            if '.svg' in lower_url or '.gif' in lower_url:
+                continue
+
+            ext = ".png" if ".png" in lower_url else ".jpg"
+            save_path = os.path.join(output_dir, f"{safe_name}_1{ext}")
+
+            if _download_image(image_url, save_path):
+                # 屋外判定（常に適用）
+                if not _is_outdoor_photo(save_path):
+                    logger.info(f"Wikipedia: 屋内写真スキップ: {title}")
+                    os.remove(save_path)
+                    continue
+                # 厳格モードのみ: 空撮・ホーム判定
+                if strict:
+                    if _is_aerial_photo(save_path):
+                        logger.info(f"Wikipedia: 空撮写真スキップ: {title}")
+                        os.remove(save_path)
+                        continue
+                    if _is_train_or_platform_photo(save_path):
+                        logger.info(f"Wikipedia: 電車/ホーム写真スキップ: {title}")
+                        os.remove(save_path)
+                        continue
+
+                logger.info(f"Wikipedia: 駅舎外観取得成功({pass_label}): {station_name}駅 ({title})")
+                return [save_path]
+
+            time.sleep(REQUEST_DELAY)
+
+        if not strict:
             break
-        image_url = url_map.get(title, "")
-        if not image_url:
-            continue
-
-        lower_url = image_url.lower()
-        if '.svg' in lower_url or '.gif' in lower_url:
-            continue
-
-        ext = ".png" if ".png" in lower_url else ".jpg"
-        save_path = os.path.join(output_dir, f"{safe_name}_1{ext}")
-
-        if _download_image(image_url, save_path):
-            # 屋外判定
-            if not _is_outdoor_photo(save_path):
-                logger.info(f"Wikipedia: 屋内写真スキップ: {title}")
-                os.remove(save_path)
-                continue
-            # 空撮判定
-            if _is_aerial_photo(save_path):
-                logger.info(f"Wikipedia: 空撮写真スキップ: {title}")
-                os.remove(save_path)
-                continue
-            # 電車/ホーム判定
-            if _is_train_or_platform_photo(save_path):
-                logger.info(f"Wikipedia: 電車/ホーム写真スキップ: {title}")
-                os.remove(save_path)
-                continue
-
-            logger.info(f"Wikipedia: 駅舎外観取得成功: {station_name}駅 ({title})")
-            return [save_path]
-
-        time.sleep(REQUEST_DELAY)
+        logger.info(f"Wikipedia: 厳格フィルターで全滅、緩和モードで再試行: {station_name}駅")
 
     logger.info(f"Wikipedia: 駅舎外観写真なし: {station_name}駅")
     return []
@@ -1084,36 +1093,44 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name,
         top_titles = [t for t, s in scored[:try_count]]
         url_map = _get_wikipedia_image_urls(top_titles)
 
-        for title, filename_score in scored[:try_count]:
-            # 商用利用可能なライセンスかチェック
-            if not _is_commercial_license(title):
-                continue
-
-            image_url = url_map.get(title, "")
-            if not image_url:
-                continue
-            lower_url = image_url.lower()
-            if '.svg' in lower_url or '.gif' in lower_url:
-                continue
-
-            ext = ".png" if ".png" in lower_url else ".jpg"
-            save_path = os.path.join(output_dir, f"{safe_name}_1{ext}")
-
-            if _download_image(image_url, save_path):
-                if not _is_outdoor_photo(save_path):
-                    os.remove(save_path)
-                    continue
-                if _is_aerial_photo(save_path):
-                    os.remove(save_path)
-                    continue
-                if _is_train_or_platform_photo(save_path):
-                    os.remove(save_path)
+        # Pass 1: 厳格フィルター / Pass 2: 緩和フィルター（屋外判定のみ）
+        for strict in [True, False]:
+            pass_label = "厳格" if strict else "緩和"
+            for title, filename_score in scored[:try_count]:
+                # 商用利用可能なライセンスかチェック
+                if not _is_commercial_license(title):
                     continue
 
-                logger.info(f"Commons: 駅舎外観取得成功 (商用利用可): {station_name}駅 ({title})")
-                return [save_path]
+                image_url = url_map.get(title, "")
+                if not image_url:
+                    continue
+                lower_url = image_url.lower()
+                if '.svg' in lower_url or '.gif' in lower_url:
+                    continue
 
-            time.sleep(REQUEST_DELAY)
+                ext = ".png" if ".png" in lower_url else ".jpg"
+                save_path = os.path.join(output_dir, f"{safe_name}_1{ext}")
+
+                if _download_image(image_url, save_path):
+                    if not _is_outdoor_photo(save_path):
+                        os.remove(save_path)
+                        continue
+                    if strict:
+                        if _is_aerial_photo(save_path):
+                            os.remove(save_path)
+                            continue
+                        if _is_train_or_platform_photo(save_path):
+                            os.remove(save_path)
+                            continue
+
+                    logger.info(f"Commons: 駅舎外観取得成功({pass_label}) (商用利用可): {station_name}駅 ({title})")
+                    return [save_path]
+
+                time.sleep(REQUEST_DELAY)
+
+            if not strict:
+                break
+            logger.info(f"Commons: 厳格フィルター全滅、緩和モードで再試行: {station_name}駅")
 
     logger.info(f"Commons: 駅舎外観写真なし: {station_name}駅")
     return []
