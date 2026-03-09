@@ -32,31 +32,91 @@ from config import (
 for _d in [OUTPUT_DIR, STATION_OUTPUT_DIR, CITY_OUTPUT_DIR, IMAGE_CACHE_DIR]:
     os.makedirs(_d, exist_ok=True)
 
-# フィードバックファイルパス
+# フィードバック（ローカル + Google Sheets）
 FEEDBACK_FILE = os.path.join(OUTPUT_DIR, "image_feedback.json")
 
 
+def _get_gsheet():
+    """Google Sheets クライアントを取得（設定済みの場合のみ）"""
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        creds_dict = dict(st.secrets.get("gcp_service_account", {}))
+        if not creds_dict:
+            return None
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+        gc = gspread.authorize(creds)
+        sheet_url = st.secrets.get("feedback_sheet_url", "")
+        if not sheet_url:
+            return None
+        sh = gc.open_by_url(sheet_url)
+        return sh.sheet1
+    except Exception:
+        return None
+
+
 def _load_feedback():
-    """画像フィードバックを読み込む"""
+    """画像フィードバックを読み込む（ローカル → Google Sheets フォールバック）"""
+    # まずローカルキャッシュを確認
     if os.path.exists(FEEDBACK_FILE):
         try:
             with open(FEEDBACK_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
+    # Google Sheetsから読み込み
+    ws = _get_gsheet()
+    if ws:
+        try:
+            rows = ws.get_all_records()
+            fb = {}
+            for row in rows:
+                name = row.get("station", "")
+                if name:
+                    fb[name] = {
+                        "rating": row.get("rating", ""),
+                        "image_path": row.get("image_path", ""),
+                        "timestamp": row.get("timestamp", ""),
+                    }
+            # ローカルキャッシュに保存
+            with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
+                json.dump(fb, f, ensure_ascii=False, indent=2)
+            return fb
+        except Exception:
+            pass
     return {}
 
 
 def _save_feedback(station_name, rating, image_path=""):
-    """画像フィードバックを保存（○ or ×）"""
+    """画像フィードバックを保存（ローカル + Google Sheets）"""
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # ローカル保存
     fb = _load_feedback()
     fb[station_name] = {
         "rating": rating,
-        "image_path": image_path,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "image_path": os.path.basename(image_path) if image_path else "",
+        "timestamp": ts,
     }
     with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
         json.dump(fb, f, ensure_ascii=False, indent=2)
+    # Google Sheets保存
+    ws = _get_gsheet()
+    if ws:
+        try:
+            # 既存の行を探して更新、なければ追加
+            cell = ws.find(station_name, in_column=1)
+            if cell:
+                ws.update_cell(cell.row, 2, rating)
+                ws.update_cell(cell.row, 3, os.path.basename(image_path) if image_path else "")
+                ws.update_cell(cell.row, 4, ts)
+            else:
+                ws.append_row([station_name, rating, os.path.basename(image_path) if image_path else "", ts])
+        except Exception:
+            pass
 
 st.set_page_config(
     page_title="STATION STUDIO",
