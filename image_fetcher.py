@@ -570,8 +570,9 @@ def _is_train_or_platform_photo(image_path):
     複数チェック:
       1. 水平均一帯（電車車体）
       2. ホーム（暗い線路 + 黄色安全線）
-      3. 金属的なグレー帯（電車のステンレス車体）
-      4. 架線・パンタグラフ（上部の細い水平線構造）
+      3. 砂利/バラスト検出（線路周りの茶灰色の小石）
+      4. 架線/金属構造物（上部の暗い線構造）
+      5. 総合スコア判定（複数の弱い指標の組み合わせ）
     """
     try:
         img = Image.open(image_path).convert("RGB")
@@ -582,6 +583,7 @@ def _is_train_or_platform_photo(image_path):
             w, h = img.size
 
         sample_step = max(1, w // 30)
+        platform_score = 0  # 総合スコア
 
         # Check 1: 中央60%の水平均一性（電車車体は横に均一な色）
         y_start = h // 5
@@ -610,6 +612,8 @@ def _is_train_or_platform_photo(image_path):
         if uniform_ratio > 0.55:
             logger.debug(f"電車判定: uniform={uniform_ratio:.2f} → 電車(均一帯)")
             return True
+        if uniform_ratio > 0.35:
+            platform_score += 2
 
         # Check 2: ホーム検出 - 下部に暗い線路 + 黄色い安全線
         bottom_third = img.crop((0, h * 2 // 3, w, h))
@@ -626,9 +630,82 @@ def _is_train_or_platform_photo(image_path):
         if dark_bottom > 0.25 and yellow_rows >= 1:
             logger.debug(f"電車判定: dark_bt={dark_bottom:.2f} yellow={yellow_rows}rows → ホーム(線路+黄線)")
             return True
+        if yellow_rows >= 1:
+            platform_score += 2
+        if dark_bottom > 0.15:
+            platform_score += 1
 
-        logger.debug(f"電車判定: uniform={uniform_ratio:.2f} dark_bt={dark_bottom:.2f} yellow={yellow_rows} → OK")
-        return False
+        # Check 3: 砂利/バラスト検出（線路周りの茶灰色の小石）
+        # 中央〜下部にかけて茶灰色が多い = 線路の砂利
+        mid_bottom = img.crop((0, h // 3, w, h))
+        mb_pixels = list(mid_bottom.getdata())
+        mb_total = len(mb_pixels)
+        gravel_count = 0
+        for r, g, b in mb_pixels:
+            brightness = (r + g + b) / 3
+            diff = max(r, g, b) - min(r, g, b)
+            # 砂利: 中程度の明るさ、低彩度、やや茶色がかり
+            if 60 < brightness < 160 and diff < 40 and r >= b:
+                gravel_count += 1
+        gravel_ratio = gravel_count / mb_total if mb_total else 0
+        if gravel_ratio > 0.40:
+            platform_score += 3
+        elif gravel_ratio > 0.25:
+            platform_score += 2
+        elif gravel_ratio > 0.15:
+            platform_score += 1
+
+        # Check 4: 上部の空 vs 架線/金属構造物
+        # ホーム写真は上部に屋根の金属フレームや架線がある → 空が少ない
+        # 駅外観写真は上部に空がある
+        top_quarter = img.crop((0, 0, w, h // 4))
+        tq_pixels = list(top_quarter.getdata())
+        tq_total = len(tq_pixels)
+        dark_structure = 0
+        metallic = 0
+        sky_pixels = 0
+        for r, g, b in tq_pixels:
+            brightness = (r + g + b) / 3
+            diff = max(r, g, b) - min(r, g, b)
+            # 暗い構造物（架線、鉄骨）
+            if brightness < 80 and diff < 30:
+                dark_structure += 1
+            # 金属的なグレー（屋根、支柱）
+            elif 100 < brightness < 200 and diff < 25:
+                metallic += 1
+            # 空（青空 or 白い空）
+            if (b > 80 and b > r + 20 and b > g) or (r > 200 and g > 200 and b > 200):
+                sky_pixels += 1
+        dark_struct_ratio = dark_structure / tq_total if tq_total else 0
+        metallic_ratio = metallic / tq_total if tq_total else 0
+        sky_ratio_top = sky_pixels / tq_total if tq_total else 0
+        overhead_ratio = dark_struct_ratio + metallic_ratio * 0.5
+        if overhead_ratio > 0.3:
+            platform_score += 2
+        elif overhead_ratio > 0.15:
+            platform_score += 1
+
+        # Check 5: 遠近法の収束（線路が奥に伸びるパターン）
+        # 中央縦帯の明るさ変化が少なく、左右に暗い帯がある
+        center_strip = img.crop((w // 3, h // 3, w * 2 // 3, h * 2 // 3))
+        cs_pixels = list(center_strip.getdata())
+        left_strip = img.crop((0, h // 3, w // 4, h * 2 // 3))
+        ls_pixels = list(left_strip.getdata())
+        if cs_pixels and ls_pixels:
+            center_bright = sum((r + g + b) / 3 for r, g, b in cs_pixels) / len(cs_pixels)
+            left_bright = sum((r + g + b) / 3 for r, g, b in ls_pixels) / len(ls_pixels)
+            # 中央が明るく左右が暗い → 線路が中央に伸びるパターン
+            if center_bright > left_bright + 20:
+                platform_score += 1
+
+        # 総合判定: スコア4以上でホーム/線路写真と判定
+        is_platform = platform_score >= 4
+        logger.debug(
+            f"電車判定: uniform={uniform_ratio:.2f} dark_bt={dark_bottom:.2f} "
+            f"yellow={yellow_rows} gravel={gravel_ratio:.2f} overhead={overhead_ratio:.2f} "
+            f"sky_top={sky_ratio_top:.2f} score={platform_score} → {'ホーム' if is_platform else 'OK'}"
+        )
+        return is_platform
     except Exception as e:
         logger.debug(f"電車判定エラー: {e}")
         return False
@@ -652,7 +729,7 @@ def _score_image_filename(title, station_name):
         'platform', 'ホーム', 'track', '線路', '軌道',
         'train', '電車', '列車', '車両', '系電車', '系気動車',
         'series',
-        'interior', '改札', 'concourse', '構内', 'ticket', '券売',
+        'interior', 'inside', '改札', 'concourse', '構内', 'ticket', '券売',
         'fare gate', 'ticket gate',
         'map', 'diagram', 'logo', 'symbol', 'banner', 'icon', 'pictogram',
         'route', '路線', 'linemap',
@@ -666,8 +743,15 @@ def _score_image_filename(title, station_name):
         'disambig', 'commons-logo',
         '1960', '1970', '1980', '1990', '昭和', 'historic', 'historical',
         'old_', 'former', '旧',
+        'construction', '工事', 'under construction',
     ]
     if any(kw in lower for kw in reject):
+        return None
+
+    # 古い日付パターン拒否（19YYMMDD、19YY_、19YY-）
+    if re.search(r'19[0-9]{2}[01][0-9][0-3][0-9]', title):
+        return None
+    if re.search(r'19[0-9]{2}[-_]', title):
         return None
 
     score = 0
@@ -678,12 +762,17 @@ def _score_image_filename(title, station_name):
         ('exterior', 40), ('facade', 40),
         ('entrance', 35), ('入口', 35), ('入り口', 35),
         ('南口', 30), ('北口', 30), ('東口', 30), ('西口', 30),
-        ('south', 25), ('north', 25), ('east', 25), ('west', 25),
         ('exit', 25),
     ]
     for kw, pts in prefer:
         if kw in lower:
             score += pts
+
+    # 英語の方角: 単体のみ加点（southwest/northeast等の合成方角は除外）
+    _compound_dirs = {'southwest', 'southeast', 'northwest', 'northeast'}
+    for d_kw in ['south', 'north', 'east', 'west']:
+        if d_kw in lower and not any(cd in lower for cd in _compound_dirs):
+            score += 25
 
     # building は駅関連コンテキストがある場合のみ加点
     if 'building' in lower and ('station' in lower or 'sta' in lower or '駅' in lower):
