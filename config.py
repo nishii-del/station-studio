@@ -72,6 +72,7 @@ APP_DELETE_PASSWORD = os.environ.get("STATION_STUDIO_DELETE_PW", "delete2024")
 
 # ユーザーアカウント {ID: パスワード}
 APP_USERS = {
+    "staff":      "station2024",
     "ishii":      "1417",
     "obuchi":     "St@obuchi2024",
     "takeuchi":   "St@takeuchi2024",
