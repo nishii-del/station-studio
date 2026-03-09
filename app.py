@@ -32,6 +32,8 @@ from config import (
 for _d in [OUTPUT_DIR, STATION_OUTPUT_DIR, CITY_OUTPUT_DIR, IMAGE_CACHE_DIR]:
     os.makedirs(_d, exist_ok=True)
 
+from image_fetcher import _sanitize_filename
+
 # フィードバック（ローカル + Google Sheets）
 FEEDBACK_FILE = os.path.join(OUTPUT_DIR, "image_feedback.json")
 
@@ -107,6 +109,15 @@ def _save_feedback(station_name, rating, image_path=""):
     del fb[station_name]
     with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
         json.dump(fb, f, ensure_ascii=False, indent=2)
+    # ×の場合、キャッシュ画像を削除（次回再取得させる）
+    if rating == "bad":
+        cache_dir = os.path.join(IMAGE_CACHE_DIR, _sanitize_filename(station_name))
+        if os.path.isdir(cache_dir):
+            for f_name in os.listdir(cache_dir):
+                f_path = os.path.join(cache_dir, f_name)
+                if os.path.isfile(f_path) and f_name.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    os.remove(f_path)
+            print(f"×フィードバック: {station_name} のキャッシュ画像を削除")
     # Google Sheets保存
     ws = _get_gsheet()
     if ws:
