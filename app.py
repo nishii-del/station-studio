@@ -660,7 +660,7 @@ with st.sidebar:
         st.caption(f"画像フィードバック: ○{fb_good} / ×{fb_bad}")
     sheet_url = st.secrets.get("feedback_sheet_url", "")
     if sheet_url:
-        st.markdown(f"[フィードバックスプシ]({sheet_url})", unsafe_allow_html=True)
+        st.markdown(f"[フィードバックスプシ]({sheet_url})　※触らなくてOK", unsafe_allow_html=True)
 
     st.markdown("---")
     if st.button("ログアウト", use_container_width=True, key="_logout_btn"):
