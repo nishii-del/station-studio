@@ -700,7 +700,7 @@ if page == "検索":
 
         col1, col2 = st.columns([3, 1])
         with col1:
-            base_station = st.text_input("基準駅名", value=default_station, placeholder="例: 表参道")
+            base_station = st.text_input("基準駅名", value="", placeholder="例: 表参道")
         with col2:
             max_transfer = st.number_input("乗り換え回数", min_value=0, max_value=5, value=default_transfer)
 
