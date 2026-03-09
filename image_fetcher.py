@@ -736,6 +736,10 @@ def _get_wikipedia_image_urls(file_titles):
             resp.raise_for_status()
             data = resp.json()
             pages = data.get("query", {}).get("pages", {})
+            # normalized: APIが返す正規化マッピング（File: → ファイル: 等）
+            normalized_map = {}
+            for n in data.get("query", {}).get("normalized", []):
+                normalized_map[n.get("to", "")] = n.get("from", "")
             for page_id, page in pages.items():
                 title = page.get("title", "")
                 imageinfo = page.get("imageinfo", [])
@@ -743,6 +747,10 @@ def _get_wikipedia_image_urls(file_titles):
                     url = imageinfo[0].get("url", "")
                     if url:
                         results[title] = url
+                        # 元のタイトル（File:形式）でもアクセスできるようにする
+                        original = normalized_map.get(title, "")
+                        if original:
+                            results[original] = url
         except requests.RequestException as e:
             logger.debug(f"Wikipedia imageinfo APIエラー: {e}")
     return results
@@ -965,20 +973,29 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name,
                 if any(kw in lower_title for kw in terminal_reject):
                     logger.debug(f"Commons: ターミナル駅 駅関連拒否: {title}")
                     continue
-            score = _score_image_filename(title, station_name)
-            if score is not None and score >= 0:
-                scored.append((title, score))
+            if station_type == "terminal":
+                # ターミナル駅はランドマーク検索なのでスコアリングを緩和
+                # 画像ファイルであれば候補にする
+                lower_t = title.lower()
+                if any(ext in lower_t for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                    if '.svg' not in lower_t and '.gif' not in lower_t:
+                        scored.append((title, 0))
+            else:
+                score = _score_image_filename(title, station_name)
+                if score is not None and score >= 0:
+                    scored.append((title, score))
 
         scored.sort(key=lambda x: x[1], reverse=True)
 
         if not scored:
             continue
 
-        # URL取得してダウンロード
-        top_titles = [t for t, s in scored[:5]]
+        # URL取得してダウンロード（ターミナル駅はより多く試す）
+        try_count = 10 if station_type == "terminal" else 5
+        top_titles = [t for t, s in scored[:try_count]]
         url_map = _get_wikipedia_image_urls(top_titles)
 
-        for title, filename_score in scored[:5]:
+        for title, filename_score in scored[:try_count]:
             # 商用利用可能なライセンスかチェック
             if not _is_commercial_license(title):
                 continue
