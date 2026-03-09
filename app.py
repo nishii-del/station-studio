@@ -595,17 +595,15 @@ def _render_cards(stations, json_dir, selectable=False, railway_prefix="", show_
                     img_abs = resolve_image_path(img_rel, json_dir)
                     if os.path.exists(img_abs):
                         st.image(img_abs, use_container_width=True)
-                        # フィードバックボタン
-                        fb_data = _load_feedback()
+                        # フィードバックボタン（常にニュートラル状態）
                         raw = name.rstrip("駅")
-                        current_rating = fb_data.get(raw, {}).get("rating", "")
                         fb_cols = st.columns([1, 1, 2])
                         with fb_cols[0]:
-                            if st.button("○", key=f"fb_ok_{railway_prefix}_{name}", type="secondary" if current_rating != "good" else "primary"):
+                            if st.button("○", key=f"fb_ok_{railway_prefix}_{name}", type="secondary"):
                                 _save_feedback(raw, "good", img_abs)
                                 st.rerun()
                         with fb_cols[1]:
-                            if st.button("×", key=f"fb_ng_{railway_prefix}_{name}", type="secondary" if current_rating != "bad" else "primary"):
+                            if st.button("×", key=f"fb_ng_{railway_prefix}_{name}", type="secondary"):
                                 _save_feedback(raw, "bad", img_abs)
                                 st.rerun()
 
@@ -1447,17 +1445,15 @@ elif page == "ライブラリ":
                                 abs_p = resolve_image_path(img_p, lib_dir)
                                 if os.path.exists(abs_p):
                                     st.image(abs_p, use_container_width=True)
-                                    # フィードバックボタン
-                                    fb_data = _load_feedback()
+                                    # フィードバックボタン（常にニュートラル状態）
                                     raw_sn = s_name.rstrip("駅")
-                                    cur_rating = fb_data.get(raw_sn, {}).get("rating", "")
                                     lb_cols = st.columns([1, 1, 2])
                                     with lb_cols[0]:
-                                        if st.button("○", key=f"lib_fb_ok_{entry_id}_{s_name}", type="secondary" if cur_rating != "good" else "primary"):
+                                        if st.button("○", key=f"lib_fb_ok_{entry_id}_{s_name}", type="secondary"):
                                             _save_feedback(raw_sn, "good", abs_p)
                                             st.rerun()
                                     with lb_cols[1]:
-                                        if st.button("×", key=f"lib_fb_ng_{entry_id}_{s_name}", type="secondary" if cur_rating != "bad" else "primary"):
+                                        if st.button("×", key=f"lib_fb_ng_{entry_id}_{s_name}", type="secondary"):
                                             _save_feedback(raw_sn, "bad", abs_p)
                                             st.rerun()
 
@@ -1706,16 +1702,14 @@ elif page == "保管庫":
                         if is_open:
                             for img_name in img_files:
                                 st.image(os.path.join(cache_path, img_name), use_container_width=True)
-                            # フィードバックボタン
-                            fb_data = _load_feedback()
-                            cur_r = fb_data.get(name, {}).get("rating", "")
+                            # フィードバックボタン（常にニュートラル状態）
                             cc_cols = st.columns([1, 1, 2])
                             with cc_cols[0]:
-                                if st.button("○", key=f"cache_fb_ok_{ci}", type="secondary" if cur_r != "good" else "primary"):
+                                if st.button("○", key=f"cache_fb_ok_{ci}", type="secondary"):
                                     _save_feedback(name, "good", cache_path)
                                     st.rerun()
                             with cc_cols[1]:
-                                if st.button("×", key=f"cache_fb_ng_{ci}", type="secondary" if cur_r != "bad" else "primary"):
+                                if st.button("×", key=f"cache_fb_ng_{ci}", type="secondary"):
                                     _save_feedback(name, "bad", cache_path)
                                     st.rerun()
 
