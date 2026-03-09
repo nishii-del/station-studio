@@ -32,6 +32,32 @@ from config import (
 for _d in [OUTPUT_DIR, STATION_OUTPUT_DIR, CITY_OUTPUT_DIR, IMAGE_CACHE_DIR]:
     os.makedirs(_d, exist_ok=True)
 
+# フィードバックファイルパス
+FEEDBACK_FILE = os.path.join(OUTPUT_DIR, "image_feedback.json")
+
+
+def _load_feedback():
+    """画像フィードバックを読み込む"""
+    if os.path.exists(FEEDBACK_FILE):
+        try:
+            with open(FEEDBACK_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_feedback(station_name, rating, image_path=""):
+    """画像フィードバックを保存（○ or ×）"""
+    fb = _load_feedback()
+    fb[station_name] = {
+        "rating": rating,
+        "image_path": image_path,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    with open(FEEDBACK_FILE, "w", encoding="utf-8") as f:
+        json.dump(fb, f, ensure_ascii=False, indent=2)
+
 st.set_page_config(
     page_title="STATION STUDIO",
     page_icon="🚉",
@@ -505,6 +531,19 @@ def _render_cards(stations, json_dir, selectable=False, railway_prefix="", show_
                     img_abs = resolve_image_path(img_rel, json_dir)
                     if os.path.exists(img_abs):
                         st.image(img_abs, use_container_width=True)
+                        # フィードバックボタン
+                        fb_data = _load_feedback()
+                        raw = name.rstrip("駅")
+                        current_rating = fb_data.get(raw, {}).get("rating", "")
+                        fb_cols = st.columns([1, 1, 2])
+                        with fb_cols[0]:
+                            if st.button("○", key=f"fb_ok_{railway_prefix}_{name}", type="secondary" if current_rating != "good" else "primary"):
+                                _save_feedback(raw, "good", img_abs)
+                                st.rerun()
+                        with fb_cols[1]:
+                            if st.button("×", key=f"fb_ng_{railway_prefix}_{name}", type="secondary" if current_rating != "bad" else "primary"):
+                                _save_feedback(raw, "bad", img_abs)
+                                st.rerun()
 
 
 def render_station_cards(data, mode_key):
@@ -554,6 +593,11 @@ with st.sidebar:
         if os.path.exists(_lb):
             lib_count += len(os.listdir(_lb))
     st.caption(f"ライブラリ: {lib_count}件")
+    fb_data = _load_feedback()
+    fb_good = sum(1 for v in fb_data.values() if v.get("rating") == "good")
+    fb_bad = sum(1 for v in fb_data.values() if v.get("rating") == "bad")
+    if fb_data:
+        st.caption(f"画像フィードバック: ○{fb_good} / ×{fb_bad}")
 
     st.markdown("---")
     if st.button("ログアウト", use_container_width=True, key="_logout_btn"):
@@ -1336,6 +1380,19 @@ elif page == "ライブラリ":
                                 abs_p = resolve_image_path(img_p, lib_dir)
                                 if os.path.exists(abs_p):
                                     st.image(abs_p, use_container_width=True)
+                                    # フィードバックボタン
+                                    fb_data = _load_feedback()
+                                    raw_sn = s_name.rstrip("駅")
+                                    cur_rating = fb_data.get(raw_sn, {}).get("rating", "")
+                                    lb_cols = st.columns([1, 1, 2])
+                                    with lb_cols[0]:
+                                        if st.button("○", key=f"lib_fb_ok_{entry_id}_{s_name}", type="secondary" if cur_rating != "good" else "primary"):
+                                            _save_feedback(raw_sn, "good", abs_p)
+                                            st.rerun()
+                                    with lb_cols[1]:
+                                        if st.button("×", key=f"lib_fb_ng_{entry_id}_{s_name}", type="secondary" if cur_rating != "bad" else "primary"):
+                                            _save_feedback(raw_sn, "bad", abs_p)
+                                            st.rerun()
 
             st.markdown("")
 
@@ -1582,6 +1639,18 @@ elif page == "保管庫":
                         if is_open:
                             for img_name in img_files:
                                 st.image(os.path.join(cache_path, img_name), use_container_width=True)
+                            # フィードバックボタン
+                            fb_data = _load_feedback()
+                            cur_r = fb_data.get(name, {}).get("rating", "")
+                            cc_cols = st.columns([1, 1, 2])
+                            with cc_cols[0]:
+                                if st.button("○", key=f"cache_fb_ok_{ci}", type="secondary" if cur_r != "good" else "primary"):
+                                    _save_feedback(name, "good", cache_path)
+                                    st.rerun()
+                            with cc_cols[1]:
+                                if st.button("×", key=f"cache_fb_ng_{ci}", type="secondary" if cur_r != "bad" else "primary"):
+                                    _save_feedback(name, "bad", cache_path)
+                                    st.rerun()
 
                         buf = io.BytesIO()
                         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
