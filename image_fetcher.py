@@ -134,13 +134,28 @@ def _burn_attribution(image_path, lic_info):
         scale = w / 800
         bar_height = max(30, int(28 * scale))
         font_size = max(16, int(18 * scale))
-        # フォント（システムフォントにフォールバック）
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
-        except (OSError, IOError):
+        # フォント（複数候補を試行、全滅時はPillow内蔵フォントを拡大）
+        font = None
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+            "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/System/Library/Fonts/Arial.ttf",
+        ]
+        for fp in font_paths:
             try:
-                font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
+                font = ImageFont.truetype(fp, font_size)
+                break
             except (OSError, IOError):
+                continue
+        if font is None:
+            # Pillow 10+ の load_default でサイズ指定
+            try:
+                font = ImageFont.load_default(size=font_size)
+            except TypeError:
                 font = ImageFont.load_default()
         # 下部にバーを追加
         from PIL import Image as PilImage
