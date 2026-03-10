@@ -704,24 +704,24 @@ with st.sidebar:
 </div>""", unsafe_allow_html=True)
 
     with st.expander("詳細を見る"):
-        st.markdown("""
-**CC0 / Public Domain**
-商用OK ／ 加工OK ／ 表記不要
-そのまま自由に使えます
-
-**CC BY**
-商用OK ／ 加工OK ／ 表記必要
-`Photo: 作者名 / Wikimedia Commons / CC BY 4.0`
-加工時は末尾に `(edited)` を付記
-
-**CC BY-SA**
-商用OK ／ 加工OK ／ 表記必要
-`Photo: 作者名 / Wikimedia Commons / CC BY-SA 4.0`
-加工時は末尾に `(edited)` を付記
-⚠ 加工後の画像を単体配布する場合は同ライセンスを適用
-
-CC-BY-NC / GFDL / 不明ライセンスは自動除外
-""")
+        st.markdown("""<div style="font-size:0.72rem;line-height:1.6;color:#666;">
+<b style="color:#444;">CC0 / Public Domain</b><br>
+商用OK ／ 加工OK ／ 表記不要<br>
+<span style="color:#2d8a4e;">自由に使用可能</span>
+<br><br>
+<b style="color:#444;">CC BY</b><br>
+商用OK ／ 加工OK ／ 表記必要<br>
+<span style="font-size:0.68rem;color:#888;">Photo: 作者名 / Wikimedia Commons / CC BY 4.0</span><br>
+<span style="font-size:0.68rem;">加工時は末尾に (edited) を付記</span>
+<br><br>
+<b style="color:#444;">CC BY-SA</b><br>
+商用OK ／ 加工OK ／ 表記必要<br>
+<span style="font-size:0.68rem;color:#888;">Photo: 作者名 / Wikimedia Commons / CC BY-SA 4.0</span><br>
+<span style="font-size:0.68rem;">加工時は末尾に (edited) を付記</span><br>
+<span style="font-size:0.68rem;color:#c44;">※ 画像単体を配布する場合は同ライセンス適用</span>
+<br><br>
+<span style="font-size:0.65rem;color:#aaa;">CC-BY-NC / GFDL / 不明は自動除外</span>
+</div>""", unsafe_allow_html=True)
 
     st.markdown("---")
     lib_count = 0
