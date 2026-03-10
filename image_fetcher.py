@@ -45,10 +45,14 @@ _COMMERCIAL_OK_LICENSES = {
 _ALLOWED_LICENSES = _COMMERCIAL_OK_LICENSES
 
 
-def _is_commercial_license(file_title):
+def _check_license(file_title):
     """
-    Wikimedia Commonsのファイルが商用利用可能なライセンスかチェック。
-    CC BY-NC など非商用ライセンスの画像を除外する。
+    Wikimedia Commonsのファイルのライセンス情報を取得。
+    商用利用可能ならライセンス情報dictを返し、NGならNoneを返す。
+
+    Returns:
+        dict or None: {"license": "CC BY-SA 4.0", "author": "著作者名", "source": "Wikipedia"/"Commons",
+                       "attribution_required": True/False}
     """
     try:
         resp = requests.get(
@@ -67,25 +71,40 @@ def _is_commercial_license(file_title):
         pages = resp.json().get("query", {}).get("pages", {})
         for page in pages.values():
             metadata = page.get("imageinfo", [{}])[0].get("extmetadata", {})
-            license_short = metadata.get("LicenseShortName", {}).get("value", "").lower().strip()
-            license_url = metadata.get("LicenseUrl", {}).get("value", "").lower()
+            license_short = metadata.get("LicenseShortName", {}).get("value", "").strip()
+            license_url = metadata.get("LicenseUrl", {}).get("value", "")
+            author_html = metadata.get("Artist", {}).get("value", "")
+            # HTMLタグを除去して著作者名を取得
+            author = re.sub(r"<[^>]+>", "", author_html).strip() if author_html else ""
             # 正規化: スペースをハイフンに変換して統一
-            license_normalized = license_short.replace(" ", "-")
+            license_normalized = license_short.lower().replace(" ", "-")
+            license_url_lower = license_url.lower()
             # NC（非商用）を含むライセンスは除外
-            if "nc" in license_normalized or "nc" in license_url:
+            if "nc" in license_normalized or "nc" in license_url_lower:
                 logger.debug(f"Commons: 非商用ライセンス除外: {file_title} ({license_short})")
-                return False
+                return None
             # 許可ライセンスにマッチするか確認
             for ok in _ALLOWED_LICENSES:
-                if ok in license_normalized or ok in license_url:
+                if ok in license_normalized or ok in license_url_lower:
                     logger.debug(f"Commons: 商用利用可: {file_title} ({license_short})")
-                    return True
+                    is_free = any(f in license_normalized for f in ("cc0", "cc-zero", "pd", "public-domain", "public domain"))
+                    return {
+                        "license": license_short,
+                        "license_url": license_url,
+                        "author": author,
+                        "attribution_required": not is_free,
+                    }
             # 不明なライセンスは安全側で除外
             logger.debug(f"Commons: 不明ライセンス除外: {file_title} ({license_short})")
-            return False
+            return None
     except Exception as e:
         logger.debug(f"Commons: ライセンス確認エラー: {file_title} ({e})")
-        return False
+        return None
+
+
+def _is_commercial_license(file_title):
+    """後方互換ラッパー: 商用利用可能ならTrue"""
+    return _check_license(file_title) is not None
 
 
 # Flickr 商用利用可能ライセンスID
@@ -995,8 +1014,9 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
             ext = ".png" if ".png" in lower_url else ".jpg"
             save_path = os.path.join(output_dir, f"{safe_name}_1{ext}")
 
-            # ライセンスチェック（CC0/PDのみ許可）
-            if not _is_commercial_license(title):
+            # ライセンスチェック
+            lic_info = _check_license(title)
+            if not lic_info:
                 logger.info(f"Wikipedia: ライセンス非適合スキップ: {title}")
                 continue
 
@@ -1017,7 +1037,10 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
                         os.remove(save_path)
                         continue
 
+                lic_info["source"] = "Wikipedia"
                 logger.info(f"Wikipedia: 駅舎外観取得成功({pass_label}): {station_name}駅 ({title})")
+                global _last_license_info
+                _last_license_info = lic_info
                 return [save_path]
 
             time.sleep(REQUEST_DELAY)
@@ -1110,8 +1133,9 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name,
         for strict in [True, False]:
             pass_label = "厳格" if strict else "緩和"
             for title, filename_score in scored[:try_count]:
-                # 商用利用可能なライセンスかチェック
-                if not _is_commercial_license(title):
+                # ライセンスチェック
+                lic_info = _check_license(title)
+                if not lic_info:
                     continue
 
                 image_url = url_map.get(title, "")
@@ -1136,7 +1160,10 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name,
                             os.remove(save_path)
                             continue
 
+                    lic_info["source"] = "Wikimedia Commons"
                     logger.info(f"Commons: 駅舎外観取得成功({pass_label}) (商用利用可): {station_name}駅 ({title})")
+                    global _last_license_info
+                    _last_license_info = lic_info
                     return [save_path]
 
                 time.sleep(REQUEST_DELAY)
@@ -1387,6 +1414,9 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     Returns:
         list[str]: 保存された画像パスのリスト
     """
+    global _last_license_info
+    _last_license_info = {}
+
     # 駅名の正規化（「駅」の二重付加を防止）
     if station_name.endswith("駅"):
         station_name = station_name[:-1]
@@ -1447,3 +1477,12 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
 
     logger.info(f"画像取得失敗: {station_name}駅")
     return []
+
+
+# 直近のfetch_station_imagesで取得した画像のライセンス情報を保持
+_last_license_info = {}
+
+
+def get_last_license_info():
+    """直近のfetch_station_imagesで取得したライセンス情報を返す"""
+    return _last_license_info.copy()

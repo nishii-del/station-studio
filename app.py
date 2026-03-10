@@ -93,6 +93,39 @@ def _load_feedback():
     return {}
 
 
+def _render_attribution(station_name):
+    """画像の帰属表記を表示（meta.jsonから読み取り）"""
+    from image_fetcher import IMAGE_CACHE_DIR, _sanitize_filename
+    cache_dir = os.path.join(IMAGE_CACHE_DIR, _sanitize_filename(station_name.rstrip("駅")))
+    meta_path = os.path.join(cache_dir, "meta.json")
+    if not os.path.exists(meta_path):
+        return
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+    except Exception:
+        return
+    if not meta.get("attribution_required"):
+        return
+    author = meta.get("author", "")
+    license_name = meta.get("license", "")
+    license_url = meta.get("license_url", "")
+    source = meta.get("source", "")
+    parts = []
+    if author:
+        parts.append(author)
+    if license_name:
+        if license_url:
+            parts.append(f'<a href="{license_url}" target="_blank" style="color:#888;">{license_name}</a>')
+        else:
+            parts.append(license_name)
+    if source:
+        parts.append(f"via {source}")
+    if parts:
+        text = " / ".join(parts)
+        st.markdown(f'<div style="font-size:11px;color:#999;margin-top:-8px;margin-bottom:4px;">{text}</div>', unsafe_allow_html=True)
+
+
 def _save_feedback(station_name, rating, image_path=""):
     """画像フィードバックを保存（ローカル + Google Sheets）"""
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -471,7 +504,7 @@ def _save_lib_json(checked_stations, checked_railways, lib_dir, lib_meta):
 
 def _bg_download(checked_stations, checked_railways, lib_dir, img_dir, lib_meta):
     """バックグラウンドで画像をダウンロードしてライブラリに保存"""
-    from image_fetcher import fetch_station_images, save_cache_meta, _save_to_cache
+    from image_fetcher import fetch_station_images, save_cache_meta, _save_to_cache, get_last_license_info
 
     # 駅名→路線名の逆引きマップ
     station_rw_map = {}
@@ -488,6 +521,7 @@ def _bg_download(checked_stations, checked_railways, lib_dir, img_dir, lib_meta)
         # 保管庫に画像+メタデータを保存
         if paths:
             _save_to_cache(s["name"], paths)
+        lic_info = get_last_license_info()
         meta = {
             "name": s["name"],
             "railways": station_rw_map.get(s["name"], []),
@@ -498,6 +532,11 @@ def _bg_download(checked_stations, checked_railways, lib_dir, img_dir, lib_meta)
             "prefecture": lib_meta.get("prefecture", ""),
             "city": lib_meta.get("city", ""),
             "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "license": lic_info.get("license", ""),
+            "license_url": lic_info.get("license_url", ""),
+            "author": lic_info.get("author", ""),
+            "source": lic_info.get("source", ""),
+            "attribution_required": lic_info.get("attribution_required", False),
         }
         save_cache_meta(s["name"], meta)
 
@@ -606,6 +645,7 @@ def _render_cards(stations, json_dir, selectable=False, railway_prefix="", show_
                     img_abs = resolve_image_path(img_rel, json_dir)
                     if os.path.exists(img_abs):
                         st.image(img_abs, use_container_width=True)
+                        _render_attribution(name)
                         # フィードバックボタン（常にニュートラル状態）
                         raw = name.rstrip("駅")
                         fb_cols = st.columns([1, 1, 2])
@@ -1456,6 +1496,7 @@ elif page == "ライブラリ":
                                 abs_p = resolve_image_path(img_p, lib_dir)
                                 if os.path.exists(abs_p):
                                     st.image(abs_p, use_container_width=True)
+                                    _render_attribution(s_name)
                                     # フィードバックボタン（常にニュートラル状態）
                                     raw_sn = s_name.rstrip("駅")
                                     lb_cols = st.columns([1, 1, 2])
@@ -1713,6 +1754,7 @@ elif page == "保管庫":
                         if is_open:
                             for img_name in img_files:
                                 st.image(os.path.join(cache_path, img_name), use_container_width=True)
+                            _render_attribution(name)
                             # フィードバックボタン（常にニュートラル状態）
                             cc_cols = st.columns([1, 1, 2])
                             with cc_cols[0]:
