@@ -698,7 +698,31 @@ with st.sidebar:
 <b>Commons</b> <span style="color:#64748B;">接続中</span> <span style="color:#aaa;font-size:0.8em;">写真</span><br>
 <b>Flickr</b> <span style="color:{fcolor};">{ftext}</span> <span style="color:#aaa;font-size:0.8em;">写真</span>
 </div>""", unsafe_allow_html=True)
-    st.caption("※ すべて商用利用可能な画像のみ取得")
+
+    with st.expander("画像ライセンスについて"):
+        st.markdown("""
+**取得ライセンス（CC0/PD・CC-BYのみ）**
+
+| ライセンス | 商用 | 広告 | 加工 | 表記 |
+|:--|:--:|:--:|:--:|:--|
+| CC0 / PD | OK | OK | 自由 | 不要 |
+| CC-BY | OK | OK | 自由 | 著作者名（自動表示） |
+
+**除外しているライセンス**
+- CC-BY-SA（成果物にも同ライセンス共有義務あり）
+- CC-BY-NC（非商用のみ）
+- GFDL（ライセンス全文の添付が必要）
+- 不明なライセンス（安全側で除外）
+
+**3重フィルター**
+1. NC（非商用）を含む → 除外
+2. SA（継承義務）を含む → 除外
+3. 許可リスト（CC0/PD/CC-BY）にマッチ → 取得
+4. どれにも該当しない → 除外
+
+CC-BY画像は画像下に著作者名・ライセンスが自動表示されます。
+""")
+    st.caption("※ 商用利用・広告利用可能な画像のみ取得")
 
     st.markdown("---")
     lib_count = 0
