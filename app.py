@@ -687,42 +687,41 @@ with st.sidebar:
     page = st.radio("menu", ["検索", "ライブラリ", "保管庫"], label_visibility="hidden")
 
     st.markdown("---")
-    st.caption("接続状況")
-    from config import FLICKR_API_KEY
-    flickr_ok = FLICKR_API_KEY != "YOUR_FLICKR_API_KEY_HERE"
-    fcolor = "#64748B" if flickr_ok else "#aaa"
-    ftext = "接続中" if flickr_ok else "未設定"
-    st.markdown(f"""<div translate="no" style="font-size:0.9rem;line-height:2;">
-<b>Overpass</b> <span style="color:#64748B;">接続中</span> <span style="color:#aaa;font-size:0.8em;">駅情報</span><br>
-<b>Wikipedia</b> <span style="color:#64748B;">接続中</span> <span style="color:#aaa;font-size:0.8em;">写真</span><br>
-<b>Commons</b> <span style="color:#64748B;">接続中</span> <span style="color:#aaa;font-size:0.8em;">写真</span><br>
-<b>Flickr</b> <span style="color:{fcolor};">{ftext}</span> <span style="color:#aaa;font-size:0.8em;">写真</span>
+
+    st.markdown("""<div style="font-size:0.82rem;color:#555;line-height:1.7;">
+<b style="color:#333;">API接続</b><br>
+<span style="color:#2d8a4e;">●</span> Overpass（駅情報）<br>
+<span style="color:#2d8a4e;">●</span> Wikipedia（写真）<br>
+<span style="color:#2d8a4e;">●</span> Wikimedia Commons（写真）
 </div>""", unsafe_allow_html=True)
 
-    with st.expander("画像ライセンスについて"):
-        st.markdown("""
-**■ Public Domain / CC0**
-商用利用：OK ／ 加工：OK ／ クレジット表記：不要
-> 完全自由に使用可能
+    st.markdown("")
 
-**■ CC BY（1.0〜4.0）**
-商用利用：OK ／ 加工：OK ／ クレジット表記：必要
-> `Photo: 作者名 / Wikimedia Commons / CC BY 4.0`
-> 加工した場合は末尾に `(edited)` を付記
+    st.markdown("""<div style="font-size:0.82rem;color:#555;line-height:1.7;">
+<b style="color:#333;">取得画像のライセンス</b><br>
+全画像 商用利用OK・広告利用OK<br>
+クレジットは<b>画像に焼き込み済み</b>
+</div>""", unsafe_allow_html=True)
 
-**■ CC BY-SA（1.0〜4.0）**
-商用利用：OK ／ 加工：OK ／ クレジット表記：必要
-> `Photo: 作者名 / Wikimedia Commons / CC BY-SA 4.0`
-> 加工した場合は末尾に `(edited)` を付記
-> ⚠ 加工後の画像を単体で配布する場合、同じCC BY-SAライセンスを適用すること
-
----
-CC-BY / CC-BY-SA画像は著作者名・ライセンスが
-**画像自体に焼き込み済み**のため、そのまま広告素材として利用できます。
-
-上記以外のライセンス（CC-BY-NC / GFDL / 不明）は自動で除外されます。
-""")
-    st.caption("※ 商用利用・広告利用可能な画像のみ取得（クレジット焼き込み済み）")
+    with st.expander("詳細を見る"):
+        st.markdown("""<div style="font-size:0.78rem;line-height:1.8;color:#555;">
+<b>CC0 / Public Domain</b><br>
+商用OK ／ 加工OK ／ 表記不要<br>
+<span style="color:#2d8a4e;">そのまま自由に使えます</span>
+<br><br>
+<b>CC BY</b><br>
+商用OK ／ 加工OK ／ 表記必要<br>
+<code style="font-size:0.72rem;">Photo: 作者名 / Wikimedia Commons / CC BY 4.0</code><br>
+加工時は末尾に <code style="font-size:0.72rem;">(edited)</code> を付記
+<br><br>
+<b>CC BY-SA</b><br>
+商用OK ／ 加工OK ／ 表記必要<br>
+<code style="font-size:0.72rem;">Photo: 作者名 / Wikimedia Commons / CC BY-SA 4.0</code><br>
+加工時は末尾に <code style="font-size:0.72rem;">(edited)</code> を付記<br>
+<span style="color:#c44;">⚠ 加工後の画像を単体配布する場合は同ライセンスを適用</span>
+<br><br>
+<span style="color:#999;">CC-BY-NC / GFDL / 不明ライセンスは自動除外</span>
+</div>""", unsafe_allow_html=True)
 
     st.markdown("---")
     lib_count = 0
