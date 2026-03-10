@@ -116,7 +116,8 @@ def _burn_attribution(image_path, lic_info):
         return
     author = lic_info.get("author", "Unknown")
     license_name = lic_info.get("license", "")
-    credit = f"Photo: {author} / {license_name}"
+    source = lic_info.get("source", "Wikimedia Commons")
+    credit = f"Photo: {author} / {source} / {license_name}"
     try:
         from PIL import ImageDraw, ImageFont
         img = Image.open(image_path)
