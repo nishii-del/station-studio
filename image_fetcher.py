@@ -272,6 +272,23 @@ _TERMINAL_STATIONS = {
     "姫路", "明石", "二子玉川",
 }
 
+# 路線情報なしでも地下鉄と判定する駅名
+_KNOWN_SUBWAY_STATIONS = {
+    "表参道", "大手町", "日本橋", "銀座", "霞ケ関", "永田町", "赤坂見附",
+    "溜池山王", "六本木", "麻布十番", "白金高輪", "目黒", "青山一丁目",
+    "外苑前", "国会議事堂前", "虎ノ門", "神谷町", "広尾", "乃木坂",
+    "三軒茶屋", "下北沢", "明治神宮前", "代々木上原", "代々木公園",
+    "押上", "清澄白河", "門前仲町", "月島", "豊洲", "住吉",
+    "半蔵門", "九段下", "竹橋", "東西線", "新御茶ノ水",
+    "淡路町", "小川町", "岩本町", "人形町", "水天宮前", "茅場町",
+    "築地", "新富町", "八丁堀", "三越前", "馬喰横山", "東日本橋",
+    "浅草", "田原町", "稲荷町", "上野御徒町", "仲御徒町",
+    "本郷三丁目", "後楽園", "春日", "東池袋", "護国寺", "江戸川橋",
+    "神楽坂", "早稲田", "西早稲田", "東新宿", "新宿三丁目",
+    "北参道", "代官山", "中目黒", "祐天寺", "学芸大学", "都立大学",
+    "大門", "御成門", "芝公園", "三田", "白金台", "目黒",
+}
+
 # 地下鉄路線名キーワード（この路線の駅は地下鉄タイプ）
 _SUBWAY_KEYWORDS = [
     "東京メトロ", "都営", "横浜市営地下鉄", "大阪メトロ",
@@ -287,11 +304,16 @@ def _classify_station_type(station_name, railways=None):
     if station_name in _TERMINAL_STATIONS:
         return "terminal"
 
+    # 地下鉄駅の判定（路線情報 or 駅名パターン）
     if railways:
         for rw in railways:
             for kw in _SUBWAY_KEYWORDS:
                 if kw in rw:
                     return "subway"
+
+    # 路線情報がなくても地下鉄駅と判定できる駅名
+    if station_name in _KNOWN_SUBWAY_STATIONS:
+        return "subway"
 
     return "local"
 
@@ -299,8 +321,8 @@ def _classify_station_type(station_name, railways=None):
 # ターミナル駅ごとの象徴的なランドマーク（Commonsで検索しやすいキーワード）
 _TERMINAL_LANDMARKS = {
     "渋谷": ["Shibuya Crossing", "渋谷スクランブル交差点", "Shibuya scramble"],
-    "新宿": ["Shinjuku skyscrapers", "新宿高層ビル", "Shinjuku skyline"],
-    "池袋": ["Ikebukuro Sunshine", "池袋サンシャイン", "Ikebukuro east exit"],
+    "新宿": ["Shinjuku station", "新宿駅 南口", "Shinjuku skyline"],
+    "池袋": ["Ikebukuro station", "池袋駅 東口", "Ikebukuro east exit"],
     "東京": ["Tokyo Station Marunouchi", "東京駅丸の内", "Tokyo Station red brick"],
     "品川": ["Shinagawa skyline", "品川 高層ビル"],
     "上野": ["Ueno Park", "上野公園", "Ueno Ameyoko"],
@@ -1493,11 +1515,14 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
     queries = _generate_search_queries(station_name, station_type)
 
     if station_type == "terminal":
-        # ターミナル駅: 街のランドマーク・象徴的風景を優先
-        # Wikipedia駅記事には駅舎・改札等の写真しかないのでスキップ
-        logger.info(f"ターミナル駅: ランドマーク検索: {station_name} (Wikipedia駅記事スキップ)")
+        # ターミナル駅: Wikipedia → ランドマーク検索
+        # 1. Wikipedia記事画像（駅舎・駅前の良い写真がある場合が多い）
+        logger.info(f"ターミナル駅: Wikipedia記事画像を検索: {station_name}駅")
+        paths = _wikipedia_station_image(station_name, output_dir, safe_name)
+        if paths:
+            return paths
 
-        # 1. Wikimedia Commonsでランドマーク検索
+        # 2. Wikimedia Commonsでランドマーク検索
         paths = _wikimedia_commons_search(
             station_name, output_dir, safe_name,
             search_queries=queries["commons_queries"],
@@ -1506,7 +1531,7 @@ def fetch_station_images(station_name, output_dir, max_images=IMAGES_PER_STATION
         if paths:
             return paths
 
-        # 2. Flickr検索（商用利用可能ライセンスのみ）
+        # 3. Flickr検索（商用利用可能ライセンスのみ）
         logger.info(f"Flickrでランドマーク検索: {station_name}")
         paths = _flickr_search_station(
             station_name, output_dir, safe_name,
