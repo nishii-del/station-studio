@@ -130,8 +130,10 @@ def _burn_attribution(image_path, lic_info):
         from PIL import ImageDraw, ImageFont
         img = Image.open(image_path)
         w, h = img.size
-        bar_height = max(20, int(h * 0.04))
-        font_size = max(10, bar_height - 6)
+        # 表示幅800px想定で読みやすいサイズに調整
+        scale = w / 800
+        bar_height = max(30, int(28 * scale))
+        font_size = max(16, int(18 * scale))
         # フォント（システムフォントにフォールバック）
         try:
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
@@ -145,7 +147,8 @@ def _burn_attribution(image_path, lic_info):
         new_img = PilImage.new("RGB", (w, h + bar_height), (30, 30, 30))
         new_img.paste(img, (0, 0))
         draw = ImageDraw.Draw(new_img)
-        draw.text((6, h + 2), credit, fill=(200, 200, 200), font=font)
+        text_y = h + (bar_height - font_size) // 2
+        draw.text((10, text_y), credit, fill=(200, 200, 200), font=font)
         new_img.save(image_path, quality=95)
         logger.info(f"帰属表記を焼き込み: {credit}")
     except Exception as e:
