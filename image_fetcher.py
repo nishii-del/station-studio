@@ -137,13 +137,18 @@ def _burn_attribution(image_path, lic_info):
         # フォント（複数候補を試行、全滅時はPillow内蔵フォントを拡大）
         font = None
         font_paths = [
+            # 日本語対応フォント（優先）
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",
+            # 欧文フォント
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
             "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
-            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            # macOS
+            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
             "/System/Library/Fonts/Helvetica.ttc",
-            "/System/Library/Fonts/Arial.ttf",
         ]
         for fp in font_paths:
             try:
