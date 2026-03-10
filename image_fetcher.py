@@ -42,7 +42,7 @@ _COMMERCIAL_OK_LICENSES = {
     "cc-by-sa", "cc-by-sa-1.0", "cc-by-sa-2.0", "cc-by-sa-2.5", "cc-by-sa-3.0", "cc-by-sa-4.0",
 }
 
-_ALLOWED_LICENSES = _FREE_USE_LICENSES
+_ALLOWED_LICENSES = _COMMERCIAL_OK_LICENSES
 
 
 def _is_commercial_license(file_title):
