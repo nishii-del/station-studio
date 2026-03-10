@@ -74,8 +74,16 @@ def _check_license(file_title):
             license_short = metadata.get("LicenseShortName", {}).get("value", "").strip()
             license_url = metadata.get("LicenseUrl", {}).get("value", "")
             author_html = metadata.get("Artist", {}).get("value", "")
-            # HTMLタグを除去して著作者名を取得
+            # HTMLタグを除去して著作者名をクリーンアップ
             author = re.sub(r"<[^>]+>", "", author_html).strip() if author_html else ""
+            # ファイル名パターン（xxxx.jpg: など）を除去
+            author = re.sub(r"\S+\.\w{2,4}:\s*", "", author)
+            # "derivative work" 等の余計な語を除去
+            author = re.sub(r"\bderivative\s*(work)?\b", "", author, flags=re.IGNORECASE)
+            # 連続スペース・前後空白を整理
+            author = re.sub(r"\s+", " ", author).strip()
+            # カッコ内が空の場合を除去
+            author = re.sub(r"\(\s*\)", "", author).strip()
             # 正規化: スペースをハイフンに変換して統一
             license_normalized = license_short.lower().replace(" ", "-")
             license_url_lower = license_url.lower()
