@@ -35,11 +35,10 @@ _FREE_USE_LICENSES = {
     "cc0", "cc-zero", "pd", "public domain",
 }
 
-# 商用利用可能なライセンス（帰属表記が必要なものを含む）
+# 商用利用可能 + 広告利用OK（CC-BY-SAは共有義務があるため除外）
 _COMMERCIAL_OK_LICENSES = {
     "cc0", "cc-zero", "pd", "public domain",
     "cc-by", "cc-by-1.0", "cc-by-2.0", "cc-by-2.5", "cc-by-3.0", "cc-by-4.0",
-    "cc-by-sa", "cc-by-sa-1.0", "cc-by-sa-2.0", "cc-by-sa-2.5", "cc-by-sa-3.0", "cc-by-sa-4.0",
 }
 
 _ALLOWED_LICENSES = _COMMERCIAL_OK_LICENSES
@@ -82,6 +81,10 @@ def _check_license(file_title):
             # NC（非商用）を含むライセンスは除外
             if "nc" in license_normalized or "nc" in license_url_lower:
                 logger.debug(f"Commons: 非商用ライセンス除外: {file_title} ({license_short})")
+                return None
+            # SA（継承義務）を含むライセンスは除外
+            if "sa" in license_normalized or "/by-sa" in license_url_lower:
+                logger.debug(f"Commons: SA(継承義務)ライセンス除外: {file_title} ({license_short})")
                 return None
             # 許可ライセンスにマッチするか確認
             for ok in _ALLOWED_LICENSES:
