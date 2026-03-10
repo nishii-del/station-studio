@@ -35,10 +35,11 @@ _FREE_USE_LICENSES = {
     "cc0", "cc-zero", "pd", "public domain",
 }
 
-# 商用利用可能 + 広告利用OK（CC-BY-SAは共有義務があるため除外）
+# 商用利用可能なライセンス（帰属表記は画像に焼き込み済み）
 _COMMERCIAL_OK_LICENSES = {
     "cc0", "cc-zero", "pd", "public domain",
     "cc-by", "cc-by-1.0", "cc-by-2.0", "cc-by-2.5", "cc-by-3.0", "cc-by-4.0",
+    "cc-by-sa", "cc-by-sa-1.0", "cc-by-sa-2.0", "cc-by-sa-2.5", "cc-by-sa-3.0", "cc-by-sa-4.0",
 }
 
 _ALLOWED_LICENSES = _COMMERCIAL_OK_LICENSES
@@ -82,10 +83,6 @@ def _check_license(file_title):
             if "nc" in license_normalized or "nc" in license_url_lower:
                 logger.debug(f"Commons: 非商用ライセンス除外: {file_title} ({license_short})")
                 return None
-            # SA（継承義務）を含むライセンスは除外
-            if "sa" in license_normalized or "/by-sa" in license_url_lower:
-                logger.debug(f"Commons: SA(継承義務)ライセンス除外: {file_title} ({license_short})")
-                return None
             # 許可ライセンスにマッチするか確認
             for ok in _ALLOWED_LICENSES:
                 if ok in license_normalized or ok in license_url_lower:
@@ -108,6 +105,42 @@ def _check_license(file_title):
 def _is_commercial_license(file_title):
     """後方互換ラッパー: 商用利用可能ならTrue"""
     return _check_license(file_title) is not None
+
+
+def _burn_attribution(image_path, lic_info):
+    """
+    CC-BY等の帰属表記が必要な画像に、クレジットテキストを焼き込む。
+    CC0/PDなど表記不要な画像はそのまま返す。
+    """
+    if not lic_info or not lic_info.get("attribution_required"):
+        return
+    author = lic_info.get("author", "Unknown")
+    license_name = lic_info.get("license", "")
+    credit = f"Photo: {author} / {license_name}"
+    try:
+        from PIL import ImageDraw, ImageFont
+        img = Image.open(image_path)
+        w, h = img.size
+        bar_height = max(20, int(h * 0.04))
+        font_size = max(10, bar_height - 6)
+        # フォント（システムフォントにフォールバック）
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
+        except (OSError, IOError):
+            try:
+                font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
+            except (OSError, IOError):
+                font = ImageFont.load_default()
+        # 下部にバーを追加
+        from PIL import Image as PilImage
+        new_img = PilImage.new("RGB", (w, h + bar_height), (30, 30, 30))
+        new_img.paste(img, (0, 0))
+        draw = ImageDraw.Draw(new_img)
+        draw.text((6, h + 2), credit, fill=(200, 200, 200), font=font)
+        new_img.save(image_path, quality=95)
+        logger.info(f"帰属表記を焼き込み: {credit}")
+    except Exception as e:
+        logger.warning(f"帰属表記の焼き込み失敗: {e}")
 
 
 # Flickr 商用利用可能ライセンスID
@@ -1041,6 +1074,7 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
                         continue
 
                 lic_info["source"] = "Wikipedia"
+                _burn_attribution(save_path, lic_info)
                 logger.info(f"Wikipedia: 駅舎外観取得成功({pass_label}): {station_name}駅 ({title})")
                 global _last_license_info
                 _last_license_info = lic_info
@@ -1164,6 +1198,7 @@ def _wikimedia_commons_search(station_name, output_dir, safe_name,
                             continue
 
                     lic_info["source"] = "Wikimedia Commons"
+                    _burn_attribution(save_path, lic_info)
                     logger.info(f"Commons: 駅舎外観取得成功({pass_label}) (商用利用可): {station_name}駅 ({title})")
                     global _last_license_info
                     _last_license_info = lic_info
