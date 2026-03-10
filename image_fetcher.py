@@ -29,12 +29,20 @@ logger = logging.getLogger("store-traffic")
 # リクエスト間隔（秒）
 REQUEST_DELAY = 2.0
 
-# 商用利用可能なライセンス
+# 完全フリー（帰属表記不要・加工自由）なライセンスのみ ← 現在有効
+# 元に戻すには _ALLOWED_LICENSES = _COMMERCIAL_OK_LICENSES に変更
+_FREE_USE_LICENSES = {
+    "cc0", "cc-zero", "pd", "public domain",
+}
+
+# 商用利用可能なライセンス（帰属表記が必要なものを含む）
 _COMMERCIAL_OK_LICENSES = {
     "cc0", "cc-zero", "pd", "public domain",
     "cc-by", "cc-by-1.0", "cc-by-2.0", "cc-by-2.5", "cc-by-3.0", "cc-by-4.0",
     "cc-by-sa", "cc-by-sa-1.0", "cc-by-sa-2.0", "cc-by-sa-2.5", "cc-by-sa-3.0", "cc-by-sa-4.0",
 }
+
+_ALLOWED_LICENSES = _FREE_USE_LICENSES
 
 
 def _is_commercial_license(file_title):
@@ -67,8 +75,8 @@ def _is_commercial_license(file_title):
             if "nc" in license_normalized or "nc" in license_url:
                 logger.debug(f"Commons: 非商用ライセンス除外: {file_title} ({license_short})")
                 return False
-            # 既知の商用OKライセンスにマッチするか確認
-            for ok in _COMMERCIAL_OK_LICENSES:
+            # 許可ライセンスにマッチするか確認
+            for ok in _ALLOWED_LICENSES:
                 if ok in license_normalized or ok in license_url:
                     logger.debug(f"Commons: 商用利用可: {file_title} ({license_short})")
                     return True
@@ -986,6 +994,11 @@ def _wikipedia_station_image(station_name, output_dir, safe_name):
 
             ext = ".png" if ".png" in lower_url else ".jpg"
             save_path = os.path.join(output_dir, f"{safe_name}_1{ext}")
+
+            # ライセンスチェック（CC0/PDのみ許可）
+            if not _is_commercial_license(title):
+                logger.info(f"Wikipedia: ライセンス非適合スキップ: {title}")
+                continue
 
             if _download_image(image_url, save_path):
                 # 屋外判定（常に適用）
