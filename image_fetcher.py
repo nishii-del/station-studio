@@ -130,10 +130,10 @@ def _burn_attribution(image_path, lic_info):
         from PIL import ImageDraw, ImageFont
         img = Image.open(image_path)
         w, h = img.size
-        # 表示幅800px想定で読みやすいサイズに調整
+        # 表示時15px相当のフォントサイズ
         scale = w / 800
-        bar_height = max(30, int(28 * scale))
-        font_size = max(16, int(18 * scale))
+        font_size = max(15, int(15 * scale))
+        bar_height = font_size + max(8, int(6 * scale))
         # フォント（複数候補を試行、全滅時はPillow内蔵フォントを拡大）
         font = None
         font_paths = [
@@ -157,18 +157,28 @@ def _burn_attribution(image_path, lic_info):
             except (OSError, IOError):
                 continue
         if font is None:
-            # Pillow 10+ の load_default でサイズ指定
             try:
                 font = ImageFont.load_default(size=font_size)
             except TypeError:
                 font = ImageFont.load_default()
+        # クレジットを繰り返してバー幅を埋める
+        separator = "　｜　"
+        single_credit = credit
+        # テキスト幅を測定して繰り返し回数を決定
+        try:
+            bbox = font.getbbox(single_credit + separator)
+            single_w = bbox[2] - bbox[0]
+        except Exception:
+            single_w = len(single_credit) * font_size
+        repeat_count = max(1, (w // max(1, single_w)) + 2)
+        repeated_credit = (single_credit + separator) * repeat_count
         # 下部にバーを追加
         from PIL import Image as PilImage
         new_img = PilImage.new("RGB", (w, h + bar_height), (30, 30, 30))
         new_img.paste(img, (0, 0))
         draw = ImageDraw.Draw(new_img)
         text_y = h + (bar_height - font_size) // 2
-        draw.text((10, text_y), credit, fill=(200, 200, 200), font=font)
+        draw.text((6, text_y), repeated_credit, fill=(180, 180, 180), font=font)
         new_img.save(image_path, quality=95)
         logger.info(f"帰属表記を焼き込み: {credit}")
     except Exception as e:
