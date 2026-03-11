@@ -135,10 +135,10 @@ def _burn_attribution(image_path, lic_info):
         from PIL import ImageDraw, ImageFont
         img = Image.open(image_path)
         w, h = img.size
-        # 表示時15px相当のフォントサイズ
+        # 表示時10px相当のフォントサイズ
         scale = w / 800
-        font_size = max(15, int(15 * scale))
-        bar_height = font_size + max(8, int(6 * scale))
+        font_size = max(10, int(10 * scale))
+        bar_height = font_size + max(6, int(4 * scale))
         # フォント（同梱フォント優先、次にシステムフォント）
         font = None
         _dir = os.path.dirname(os.path.abspath(__file__))
