@@ -125,7 +125,12 @@ def _burn_attribution(image_path, lic_info):
     author = lic_info.get("author", "Unknown")
     license_name = lic_info.get("license", "")
     source = lic_info.get("source", "Wikimedia Commons")
+    # 著作者名が非ASCII(日本語等)の場合はそのまま使用、フォントで対応
     credit = f"Photo: {author} / {source} / {license_name} (edited)"
+    # クレジットテキストが長すぎる場合は短縮
+    if len(credit) > 80:
+        author_short = author[:20] + "..." if len(author) > 20 else author
+        credit = f"Photo: {author_short} / {source} / {license_name} (edited)"
     try:
         from PIL import ImageDraw, ImageFont
         img = Image.open(image_path)
@@ -134,25 +139,27 @@ def _burn_attribution(image_path, lic_info):
         scale = w / 800
         font_size = max(15, int(15 * scale))
         bar_height = font_size + max(8, int(6 * scale))
-        # フォント（複数候補を試行、全滅時はPillow内蔵フォントを拡大）
+        # フォント（同梱フォント優先、次にシステムフォント）
         font = None
+        _dir = os.path.dirname(os.path.abspath(__file__))
         font_paths = [
             # 日本語対応フォント（優先）
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",
-            # 欧文フォント
+            # macOS日本語
+            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+            # 同梱フォント（欧文のみだが確実に動く）
+            os.path.join(_dir, "fonts", "DejaVuSans.ttf"),
+            # システム欧文フォント
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
-            # macOS
-            "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
             "/System/Library/Fonts/Helvetica.ttc",
         ]
         for fp in font_paths:
             try:
                 font = ImageFont.truetype(fp, font_size)
+                logger.debug(f"フォント読み込み成功: {fp}")
                 break
             except (OSError, IOError):
                 continue
@@ -178,7 +185,7 @@ def _burn_attribution(image_path, lic_info):
         new_img.paste(img, (0, 0))
         draw = ImageDraw.Draw(new_img)
         text_y = h + (bar_height - font_size) // 2
-        draw.text((6, text_y), repeated_credit, fill=(180, 180, 180), font=font)
+        draw.text((6, text_y), repeated_credit, fill=(220, 220, 220), font=font)
         new_img.save(image_path, quality=95)
         logger.info(f"帰属表記を焼き込み: {credit}")
     except Exception as e:
