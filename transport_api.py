@@ -376,8 +376,8 @@ def find_reachable_stations(base_station, max_transfer, station_to_railways, rai
                                 queue.append((station, rw_id, transfers + 1))
 
     reachable = sorted(
-        [s for s in visited if s != base_station],
-        key=lambda s: visited[s]
+        visited.keys(),
+        key=lambda s: (0 if s == base_station else 1, visited[s])
     )
     logger.info(
         f"'{base_station}' から乗り換え{max_transfer}回以内: "
@@ -416,7 +416,7 @@ def get_reachable_stations(base_station, max_transfer):
         seen_in_line = set()
         unique_stations = []
         for s in railway_stations[rw]:
-            if s != base and s in reachable_set and s not in seen_in_line:
+            if s in reachable_set and s not in seen_in_line:
                 seen_in_line.add(s)
                 unique_stations.append(s)
         if unique_stations:

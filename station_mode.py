@@ -117,9 +117,12 @@ def run_station_mode(base_station, max_transfer):
             if station_name in seen:
                 continue
 
-            travel_time = _estimate_travel_time(base, station_name, railway_stations, station_to_railways, station_coords)
-            if travel_time is None or travel_time > MAX_TRAVEL_MINUTES:
-                continue
+            if station_name == base:
+                travel_time = 0
+            else:
+                travel_time = _estimate_travel_time(base, station_name, railway_stations, station_to_railways, station_coords)
+                if travel_time is None or travel_time > MAX_TRAVEL_MINUTES:
+                    continue
 
             seen.add(station_name)
             total_count += 1
