@@ -354,10 +354,10 @@ def _classify_station_type(station_name, railways=None):
 # ターミナル駅ごとの象徴的なランドマーク（Commonsで検索しやすいキーワード）
 _TERMINAL_LANDMARKS = {
     "渋谷": ["Shibuya Crossing", "渋谷スクランブル交差点", "Shibuya scramble"],
-    "新宿": ["Shinjuku station", "新宿駅 南口", "Shinjuku skyline"],
+    "新宿": ["Shinjuku Kabukicho", "新宿 歌舞伎町", "Shinjuku neon street"],
     "池袋": ["Ikebukuro station", "池袋駅 東口", "Ikebukuro east exit"],
     "東京": ["Tokyo Station Marunouchi", "東京駅丸の内", "Tokyo Station red brick"],
-    "品川": ["Shinagawa skyline", "品川 高層ビル"],
+    "品川": ["Shinagawa Station", "品川駅 港南口", "品川インターシティ"],
     "上野": ["Ueno Park", "上野公園", "Ueno Ameyoko"],
     "秋葉原": ["Akihabara electric town", "秋葉原 電気街"],
     "横浜": ["Yokohama Minato Mirai", "横浜みなとみらい", "Yokohama landmark tower"],
@@ -376,6 +376,8 @@ _TERMINAL_LANDMARKS = {
     "新大阪": ["Shin-Osaka Station", "新大阪駅", "Shin-Osaka"],
     "武蔵小杉": ["Musashi-Kosugi towers", "武蔵小杉 タワーマンション", "Musashi-Kosugi skyline"],
     "新横浜": ["Shin-Yokohama station", "新横浜駅 駅ビル", "Yokohama Arena"],
+    "恵比寿": ["Ebisu Garden Place", "恵比寿ガーデンプレイス", "Yebisu Garden Place Tower"],
+    "飯田橋": ["Iidabashi station", "飯田橋駅 外観", "Canal Cafe Iidabashi"],
 }
 
 
@@ -421,7 +423,8 @@ def _generate_search_queries(station_name, station_type):
             f"{station_name} station",
         ]
         places = f"{station_name}駅 駅舎 外観"
-        exclude = ['platform', 'track', 'interior', 'map']
+        exclude = ['platform', 'track', 'interior', 'map', 'diagram',
+                   'train', '電車', 'ホーム', '路線図', 'rail', 'logo']
 
     logger.info(f"駅タイプ判定: {station_name}駅 → {station_type}")
     return {
